@@ -19,6 +19,8 @@ Catatan:
 2. DNS `A record` domain `apimotion.narrapedia.top` mengarah ke IP VPS.
 3. Key produksi sudah siap:
 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` (atau publishable key), `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`.
+4. Untuk render gate, siapkan juga:
+`RENDER_GATE_SECRET` (random string panjang), opsional `RENDER_GATE_ENFORCE=true`, `RENDER_TICKET_TTL_SECONDS=120`.
 4. Repo ini sudah bisa di-clone dari VPS.
 
 ## 3) Setup Awal di VPS
@@ -120,7 +122,10 @@ Endpoint lokal app akan meneruskan:
 1. `POST /checkout`
 2. `POST /verify-payment`
 3. `POST /voucher/validate`
-4. `POST /webhook`
+4. `POST /render/authorize`
+5. `POST /render/sync`
+6. `GET /render/summary`
+7. `POST /webhook`
 
 ## 12) Update Midtrans Webhook URL
 

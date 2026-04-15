@@ -14,6 +14,7 @@ const defaultInputPath = path.join("batch", "tasks.tsk");
 const defaultOutputPath = path.join("out", "batch");
 const port = Number(process.env.BATCH_UI_PORT || 3210);
 const host = process.env.BATCH_UI_HOST || "127.0.0.1";
+const appUpdateTargetUrl = "https://narrapedia.top/tools/narrapedia-motion-batch";
 const envLoadDiagnostics = {
   checkedFiles: [],
   loadedFiles: [],
@@ -33,6 +34,7 @@ const state = {
 
 const MAX_HISTORY = 200;
 let renderStatsStorageDisabled = false;
+let renderSyncEndpointUnavailableUntil = 0;
 
 const SUBSCRIPTION_PLAN_PRESETS = [
   {
@@ -450,7 +452,16 @@ const getCookieValue = (req, cookieName) => {
   return "";
 };
 
-const buildSubscriptionBackendUrl = (config, endpointPath) => {
+const normalizeBackendPathname = (pathname) => {
+  const normalized = `/${String(pathname || "")
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/\/{2,}/g, "/")
+    .replace(/\/+$/, "")}`;
+  return normalized === "/" ? "" : normalized;
+};
+
+const buildSubscriptionBackendUrlCandidates = (config, endpointPath) => {
   const baseUrl = String(config?.backendBaseUrl || "").trim();
   if (!baseUrl) {
     throw new HttpError(
@@ -459,7 +470,72 @@ const buildSubscriptionBackendUrl = (config, endpointPath) => {
     );
   }
 
-  return `${baseUrl.replace(/\/$/, "")}${endpointPath}`;
+  const normalizedEndpoint = `/${String(endpointPath || "")
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/\/{2,}/g, "/")
+    .replace(/\/+$/, "")}`;
+
+  let normalizedBaseUrl = baseUrl.replace(/\/+$/, "");
+  const candidates = [];
+
+  const pushCandidate = (value) => {
+    if (value) {
+      candidates.push(value);
+    }
+  };
+
+  pushCandidate(`${normalizedBaseUrl}${normalizedEndpoint}`);
+
+  try {
+    const parsed = new URL(normalizedBaseUrl);
+    const normalizedBasePath = normalizeBackendPathname(parsed.pathname);
+    const markerPattern = /\/(subscription|subscription-api)$/i;
+    const pushOriginMarkerCandidates = () => {
+      const origin = `${parsed.protocol}//${parsed.host}`;
+      pushCandidate(`${origin}/subscription${normalizedEndpoint}`);
+      pushCandidate(`${origin}/subscription-api${normalizedEndpoint}`);
+    };
+    const markerCandidates = [];
+
+    if (!markerPattern.test(normalizedBasePath)) {
+      markerCandidates.push("/subscription", "/subscription-api");
+    } else if (/\/subscription-api$/i.test(normalizedBasePath)) {
+      markerCandidates.push(normalizedBasePath.replace(/\/subscription-api$/i, "/subscription"));
+    } else if (/\/subscription$/i.test(normalizedBasePath)) {
+      markerCandidates.push(normalizedBasePath.replace(/\/subscription$/i, "/subscription-api"));
+    }
+
+    // Support legacy function-style path configuration, e.g.
+    // https://host/functions/v1/subscription-api -> https://host/subscription
+    const strippedFunctionsPrefix = normalizedBasePath.replace(/\/functions\/v1/i, "");
+    if (strippedFunctionsPrefix !== normalizedBasePath) {
+      if (/\/subscription-api$/i.test(strippedFunctionsPrefix)) {
+        markerCandidates.push(strippedFunctionsPrefix.replace(/\/subscription-api$/i, "/subscription"));
+      } else if (/\/subscription$/i.test(strippedFunctionsPrefix)) {
+        markerCandidates.push(strippedFunctionsPrefix.replace(/\/subscription$/i, "/subscription-api"));
+      } else {
+        markerCandidates.push(`${strippedFunctionsPrefix}/subscription`, `${strippedFunctionsPrefix}/subscription-api`);
+      }
+    }
+
+    pushOriginMarkerCandidates();
+
+    for (const marker of markerCandidates) {
+      const markerPath = marker.startsWith("/")
+        ? marker.replace(/\/{2,}/g, "/")
+        : `${normalizedBasePath}${marker}`.replace(/\/{2,}/g, "/");
+      parsed.pathname = markerPath;
+      parsed.search = "";
+      parsed.hash = "";
+      const markerBaseUrl = parsed.toString().replace(/\/+$/, "");
+      pushCandidate(`${markerBaseUrl}${normalizedEndpoint}`);
+    }
+  } catch {
+    // Keep direct candidate if base URL is not a valid absolute URL.
+  }
+
+  return [...new Set(candidates)];
 };
 
 const requestSubscriptionBackend = async ({
@@ -469,29 +545,106 @@ const requestSubscriptionBackend = async ({
   body,
   bearerToken = "",
 }) => {
-  const targetUrl = buildSubscriptionBackendUrl(config, endpointPath);
+  const targetUrls = buildSubscriptionBackendUrlCandidates(config, endpointPath);
   const normalizedToken = String(bearerToken || "").trim();
+  let lastError = null;
 
-  const response = await fetch(targetUrl, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(normalizedToken ? {Authorization: `Bearer ${normalizedToken}`} : {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  for (let index = 0; index < targetUrls.length; index += 1) {
+    const targetUrl = targetUrls[index];
+    const isLastCandidate = index === targetUrls.length - 1;
 
-  const data = await parseJsonResponse(response);
-  if (!response.ok) {
-    throw new HttpError(
+    const response = await fetch(targetUrl, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(normalizedToken ? {Authorization: `Bearer ${normalizedToken}`} : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+
+    const data = await parseJsonResponse(response);
+    if (response.ok) {
+      return data;
+    }
+
+    // Fallback to alternative base path candidates (/subscription or /subscription-api)
+    // when backend returns 404 on one candidate.
+    if (response.status === 404 && !isLastCandidate) {
+      continue;
+    }
+
+    lastError = new HttpError(
       response.status,
       data?.error
       || data?.message
       || `Backend subscription request failed (${response.status}) on ${endpointPath}`,
     );
+    break;
   }
 
-  return data;
+  if (lastError) {
+    throw lastError;
+  }
+
+  throw new HttpError(502, `Backend subscription request failed on ${endpointPath}`);
+};
+
+const requestRenderAuthorizationTicket = async ({
+  config,
+  accessToken,
+  mode,
+  inputPath = "",
+  composition = "",
+  resolution = "",
+  limit = null,
+}) => {
+  const normalizedToken = String(accessToken || "").trim();
+  if (!normalizedToken) {
+    throw new HttpError(401, "Login required. Missing access token for render authorization.");
+  }
+
+  if (!config?.backendBaseUrl) {
+    throw new HttpError(
+      503,
+      "Render gate backend belum dikonfigurasi. Set SUBSCRIPTION_BACKEND_URL.",
+    );
+  }
+
+  try {
+    const result = await requestSubscriptionBackend({
+      config,
+      endpointPath: "/render/authorize",
+      method: "POST",
+      bearerToken: normalizedToken,
+      body: {
+        mode,
+        inputPath: inputPath || null,
+        composition: composition || null,
+        resolution: resolution || null,
+        limit: Number.isFinite(Number(limit)) ? Number(limit) : null,
+        userAgent: "motion-video-batch-ui-desktop",
+      },
+    });
+
+    const jobTicket = String(result?.jobTicket || result?.ticket || "").trim();
+    if (!jobTicket) {
+      throw new HttpError(502, "Backend render authorize tidak mengembalikan job ticket.");
+    }
+
+    return {
+      jobTicket,
+      expiresAt: String(result?.expiresAt || ""),
+      mode: String(result?.mode || mode || ""),
+    };
+  } catch (error) {
+    if (error instanceof HttpError && error.statusCode === 404) {
+      throw new HttpError(
+        503,
+        "Endpoint backend /render/authorize belum tersedia. Update backend VPS terbaru terlebih dulu.",
+      );
+    }
+    throw error;
+  }
 };
 
 const forwardSubscriptionRequest = async ({config, req, endpointPath, method = "POST", body}) => {
@@ -1766,6 +1919,11 @@ const syncRenderHistoryEntryViaBackend = async ({config, entry, accessToken = ""
     return;
   }
 
+  const now = Date.now();
+  if (renderSyncEndpointUnavailableUntil > now) {
+    return;
+  }
+
   try {
     await requestSubscriptionBackend({
       config,
@@ -1775,6 +1933,7 @@ const syncRenderHistoryEntryViaBackend = async ({config, entry, accessToken = ""
       body: {
         jobId: entry.jobId,
         mode: entry.mode,
+        jobTicket: entry.jobTicket || null,
         inputPath: entry.inputPath || null,
         outputPath: entry.outputPath || null,
         fileName: entry.fileName || null,
@@ -1786,6 +1945,11 @@ const syncRenderHistoryEntryViaBackend = async ({config, entry, accessToken = ""
     });
   } catch (error) {
     if (error instanceof HttpError && [401, 403].includes(error.statusCode)) {
+      return;
+    }
+    if (error instanceof HttpError && error.statusCode === 404) {
+      renderSyncEndpointUnavailableUntil = Date.now() + 5 * 60 * 1000;
+      appendLog("WARN: Endpoint backend /render/sync belum tersedia. Akan coba sinkron ulang otomatis dalam beberapa menit.");
       return;
     }
     appendLog(`WARN: Gagal sinkron proyek ke backend: ${error instanceof Error ? error.message : String(error)}`);
@@ -1809,7 +1973,7 @@ const getCompletedProjectsTotalViaBackend = async ({config, accessToken = ""}) =
     const total = Number(summary?.completedProjectsTotal);
     return Number.isFinite(total) ? total : null;
   } catch (error) {
-    if (error instanceof HttpError && [401, 403].includes(error.statusCode)) {
+    if (error instanceof HttpError && [401, 403, 404].includes(error.statusCode)) {
       return null;
     }
     appendLog(`WARN: Gagal membaca total proyek dari backend: ${error instanceof Error ? error.message : String(error)}`);
@@ -1946,7 +2110,15 @@ const getCompletedProjectsTotalForUser = async ({config, userId, accessToken = "
 
   const internalEnabled = hasInternalSubscriptionConfig(config);
   if (!internalEnabled) {
-    return getCompletedProjectsTotalViaBackend({config, accessToken});
+    const backendTotal = await getCompletedProjectsTotalViaBackend({config, accessToken});
+    if (Number.isFinite(backendTotal)) {
+      return backendTotal;
+    }
+    return getAuditLogCompletedProjectsTotalForUser({
+      config,
+      userId,
+      accessToken,
+    });
   }
 
   if (!renderStatsStorageDisabled) {
@@ -1999,6 +2171,78 @@ const openOutputFolder = () => {
   return targetPath;
 };
 
+const isAllowedUpdateUrl = (value) => {
+  try {
+    const parsed = new URL(String(value || "").trim());
+    return (
+      parsed.protocol === "https:"
+      && parsed.hostname.toLowerCase() === "narrapedia.top"
+      && parsed.pathname.startsWith("/tools/narrapedia-motion-batch")
+    );
+  } catch {
+    return false;
+  }
+};
+
+const spawnDetached = (command, args) => {
+  try {
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const openUrlInChrome = (targetUrl) => {
+  if (!isAllowedUpdateUrl(targetUrl)) {
+    throw new HttpError(400, "Invalid update URL.");
+  }
+
+  if (process.platform === "win32") {
+    const chromeCandidates = [
+      path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe"),
+      path.join(process.env.PROGRAMFILES || "", "Google", "Chrome", "Application", "chrome.exe"),
+      path.join(process.env["PROGRAMFILES(X86)"] || "", "Google", "Chrome", "Application", "chrome.exe"),
+    ].filter(Boolean);
+
+    for (const exePath of chromeCandidates) {
+      if (!exePath || !fs.existsSync(exePath)) {
+        continue;
+      }
+      if (spawnDetached(exePath, [targetUrl])) {
+        return {opened: true, launcher: exePath};
+      }
+    }
+
+    if (spawnDetached("cmd", ["/c", "start", "", "chrome", targetUrl])) {
+      return {opened: true, launcher: "chrome"};
+    }
+
+    return {opened: false, launcher: ""};
+  }
+
+  if (process.platform === "darwin") {
+    if (spawnDetached("open", ["-a", "Google Chrome", targetUrl])) {
+      return {opened: true, launcher: "Google Chrome"};
+    }
+    return {opened: false, launcher: ""};
+  }
+
+  const linuxCandidates = ["google-chrome", "google-chrome-stable", "chromium-browser", "chromium"];
+  for (const command of linuxCandidates) {
+    if (spawnDetached(command, [targetUrl])) {
+      return {opened: true, launcher: command};
+    }
+  }
+
+  return {opened: false, launcher: ""};
+};
+
 const runBatch = ({
   mode,
   inputPath,
@@ -2008,6 +2252,7 @@ const runBatch = ({
   actorUserId = null,
   statsConfig = null,
   statsAccessToken = "",
+  renderJobTicket = "",
 }) => {
   if (state.running) {
     throw new Error("A batch process is already running");
@@ -2073,6 +2318,7 @@ const runBatch = ({
 
       const historyEntry = {
         jobId: currentJobId,
+        jobTicket: renderJobTicket || null,
         runId,
         userId: actorUserId,
         mode,
@@ -2354,6 +2600,26 @@ const server = http.createServer(async (req, res) => {
       const limit = Number.isFinite(Number(body.limit)) && Number(body.limit) > 0
         ? Math.floor(Number(body.limit))
         : null;
+      let renderJobTicket = "";
+
+      if (!hasInternalSubscriptionConfig(statsConfig)) {
+        const ticketResponse = await requestRenderAuthorizationTicket({
+          config: statsConfig,
+          accessToken: token,
+          mode,
+          inputPath: body.path || "",
+          composition: body.composition || "",
+          resolution,
+          limit,
+        });
+        renderJobTicket = ticketResponse.jobTicket;
+
+        if (ticketResponse.expiresAt) {
+          appendLog(`Render gate authorized (${mode}). Ticket expires at ${ticketResponse.expiresAt}`);
+        } else {
+          appendLog(`Render gate authorized (${mode}).`);
+        }
+      }
 
       runBatch({
         mode,
@@ -2364,6 +2630,7 @@ const server = http.createServer(async (req, res) => {
         actorUserId: user.id,
         statsConfig,
         statsAccessToken: token,
+        renderJobTicket,
       });
       sendJson(res, 200, {running: true, mode});
       return;
@@ -2380,6 +2647,32 @@ const server = http.createServer(async (req, res) => {
       const openedPath = openOutputFolder();
       appendLog(`Opened output folder: ${openedPath}`);
       sendJson(res, 200, {opened: true, path: openedPath});
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/open-in-chrome") {
+      let body = {};
+      try {
+        const raw = await readRequestBody(req);
+        body = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new HttpError(400, "Invalid JSON payload");
+      }
+
+      const targetUrl = typeof body?.url === "string" && body.url.trim()
+        ? body.url.trim()
+        : appUpdateTargetUrl;
+      const openResult = openUrlInChrome(targetUrl);
+
+      if (!openResult.opened) {
+        throw new HttpError(500, "Google Chrome tidak ditemukan di sistem.");
+      }
+
+      sendJson(res, 200, {
+        opened: true,
+        url: targetUrl,
+        launcher: openResult.launcher,
+      });
       return;
     }
 

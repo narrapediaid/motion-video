@@ -35,6 +35,22 @@ type CheckoutVoucher = {
   finalAmountIdr: number;
 };
 
+type RenderTicketPayload = {
+  v: number;
+  ticketId: string;
+  userId: string;
+  mode: string;
+  issuedAtMs: number;
+  expiresAtMs: number;
+};
+
+type ActiveRenderJobAuthorization = {
+  ticketId: string;
+  userId: string;
+  mode: string;
+  expiresAtMs: number;
+};
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")?.trim();
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim();
 const SUPABASE_ANON_KEY =
@@ -85,6 +101,21 @@ const SUBSCRIPTION_PRICE_BY_TIER = Object.freeze(
 );
 const VALID_RENDER_MODES = new Set(["render", "test"]);
 const VALID_RENDER_STATUSES = new Set(["running", "success", "failed", "stopped"]);
+const ACTIVE_MEMBERSHIP_STATUSES = new Set(["active", "lifetime_active"]);
+const RENDER_GATE_SECRET = Deno.env.get("RENDER_GATE_SECRET")?.trim() || SUPABASE_SERVICE_ROLE_KEY;
+const RENDER_TICKET_TTL_SECONDS = Math.max(
+  30,
+  Math.min(900, Number.parseInt(String(Deno.env.get("RENDER_TICKET_TTL_SECONDS") || "120"), 10) || 120),
+);
+const RENDER_TICKET_GRACE_SECONDS = Math.max(
+  0,
+  Math.min(120, Number.parseInt(String(Deno.env.get("RENDER_TICKET_GRACE_SECONDS") || "15"), 10) || 15),
+);
+const RENDER_GATE_ENFORCE = !["0", "false", "no", "off"].includes(
+  String(Deno.env.get("RENDER_GATE_ENFORCE") || "true").trim().toLowerCase(),
+);
+const renderAuthorizeTickets = new Map<string, RenderTicketPayload>();
+const activeRenderJobs = new Map<string, ActiveRenderJobAuthorization>();
 
 class HttpError extends Error {
   statusCode: number;
@@ -129,7 +160,11 @@ const normalizeRoutePath = (value: string): string => {
   let route = value;
   if (!route) route = "/";
   if (!route.startsWith("/")) route = `/${route}`;
-  return route;
+  route = route.replace(/\/{2,}/g, "/");
+  if (route.length > 1) {
+    route = route.replace(/\/+$/, "");
+  }
+  return route || "/";
 };
 
 const getRoutePath = (request: Request): string => {
@@ -176,6 +211,207 @@ const authenticateUser = async (request: Request, opts?: { allowAnonymousHealth?
     token,
     user: data.user,
   };
+};
+
+const toBase64Url = (value: string) =>
+  btoa(value)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+
+const fromBase64Url = (value: string) => {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4);
+  return atob(padded);
+};
+
+const encodeRenderTicketPayload = (payload: RenderTicketPayload): string => {
+  return toBase64Url(JSON.stringify(payload));
+};
+
+const decodeRenderTicketPayload = (encoded: string): RenderTicketPayload => {
+  try {
+    return JSON.parse(fromBase64Url(encoded)) as RenderTicketPayload;
+  } catch {
+    throw new HttpError(401, "Invalid render ticket payload");
+  }
+};
+
+const importRenderGateKey = async () => {
+  return await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(RENDER_GATE_SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+};
+
+const hmacSignBase64Url = async (value: string): Promise<string> => {
+  const key = await importRenderGateKey();
+  const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(value));
+  const signatureBytes = new Uint8Array(signatureBuffer);
+  let binary = "";
+  for (const byte of signatureBytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return toBase64Url(binary);
+};
+
+const pruneRenderGateState = () => {
+  const now = Date.now();
+  const graceMs = RENDER_TICKET_GRACE_SECONDS * 1000;
+
+  for (const [ticketId, payload] of renderAuthorizeTickets.entries()) {
+    if (payload.expiresAtMs + graceMs < now) {
+      renderAuthorizeTickets.delete(ticketId);
+    }
+  }
+
+  for (const [jobId, authorization] of activeRenderJobs.entries()) {
+    if (authorization.expiresAtMs + graceMs < now) {
+      activeRenderJobs.delete(jobId);
+    }
+  }
+};
+
+const issueRenderAuthorizeTicket = async ({
+  userId,
+  mode,
+}: {
+  userId: string;
+  mode: string;
+}) => {
+  const now = Date.now();
+  const payload: RenderTicketPayload = {
+    v: 1,
+    ticketId: crypto.randomUUID(),
+    userId,
+    mode,
+    issuedAtMs: now,
+    expiresAtMs: now + RENDER_TICKET_TTL_SECONDS * 1000,
+  };
+  const encodedPayload = encodeRenderTicketPayload(payload);
+  const signature = await hmacSignBase64Url(encodedPayload);
+  const ticket = `${encodedPayload}.${signature}`;
+
+  pruneRenderGateState();
+  renderAuthorizeTickets.set(payload.ticketId, payload);
+
+  return {
+    ticket,
+    payload,
+  };
+};
+
+const verifyRenderAuthorizeTicket = async ({
+  ticket,
+  userId,
+  mode,
+}: {
+  ticket: string;
+  userId: string;
+  mode: string;
+}): Promise<RenderTicketPayload> => {
+  pruneRenderGateState();
+
+  const normalizedTicket = String(ticket || "").trim();
+  if (!normalizedTicket) {
+    throw new HttpError(403, "Missing render job ticket");
+  }
+
+  const splitIndex = normalizedTicket.lastIndexOf(".");
+  if (splitIndex <= 0) {
+    throw new HttpError(401, "Invalid render job ticket format");
+  }
+
+  const encodedPayload = normalizedTicket.slice(0, splitIndex);
+  const incomingSignature = normalizedTicket.slice(splitIndex + 1);
+  const expectedSignature = await hmacSignBase64Url(encodedPayload);
+
+  if (!timingSafeEqual(expectedSignature, incomingSignature)) {
+    throw new HttpError(401, "Invalid render job ticket signature");
+  }
+
+  const payload = decodeRenderTicketPayload(encodedPayload);
+  if (payload.v !== 1 || !payload.ticketId || !payload.userId || !payload.mode) {
+    throw new HttpError(401, "Invalid render job ticket payload");
+  }
+
+  if (payload.userId !== userId) {
+    throw new HttpError(403, "Render job ticket does not belong to this user");
+  }
+
+  if (payload.mode !== mode) {
+    throw new HttpError(403, "Render job ticket mode mismatch");
+  }
+
+  const now = Date.now();
+  if (payload.expiresAtMs + RENDER_TICKET_GRACE_SECONDS * 1000 < now) {
+    throw new HttpError(401, "Render job ticket expired");
+  }
+
+  const serverSidePayload = renderAuthorizeTickets.get(payload.ticketId);
+  if (!serverSidePayload) {
+    throw new HttpError(401, "Render job ticket is unknown or already expired");
+  }
+
+  if (
+    serverSidePayload.userId !== payload.userId
+    || serverSidePayload.mode !== payload.mode
+    || serverSidePayload.expiresAtMs !== payload.expiresAtMs
+  ) {
+    throw new HttpError(401, "Render job ticket has been revoked");
+  }
+
+  return payload;
+};
+
+const isMembershipRowActive = (membership: Record<string, JsonValue>) => {
+  const status = String(membership.status || "").toLowerCase();
+  if (!ACTIVE_MEMBERSHIP_STATUSES.has(status)) {
+    return false;
+  }
+
+  if (status === "lifetime_active") {
+    return true;
+  }
+
+  const now = Date.now();
+  const graceEndsAtMs = Date.parse(String(membership.grace_ends_at || ""));
+  const endsAtMs = Date.parse(String(membership.ends_at || ""));
+
+  if (Number.isFinite(graceEndsAtMs)) {
+    return graceEndsAtMs >= now;
+  }
+
+  if (Number.isFinite(endsAtMs)) {
+    return endsAtMs >= now;
+  }
+
+  return true;
+};
+
+const requireActiveMembership = async (userId: string) => {
+  const { data, error } = await serviceClient
+    .from("memberships")
+    .select("id,status,starts_at,ends_at,grace_ends_at,updated_at")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false })
+    .limit(10);
+
+  if (error) {
+    throw new HttpError(502, `Failed to read memberships: ${error.message}`);
+  }
+
+  const memberships = (Array.isArray(data) ? data : []) as Array<Record<string, JsonValue>>;
+  const activeMembership = memberships.find((membership) => isMembershipRowActive(membership));
+
+  if (!activeMembership) {
+    throw new HttpError(403, "Active membership required. Please complete payment first.");
+  }
+
+  return activeMembership;
 };
 
 const normalizePlanWithCanonicalPrice = (plan: Record<string, JsonValue>) => {
@@ -820,6 +1056,34 @@ const normalizeOptionalIsoTimestamp = (value: unknown, label: string) => {
   return new Date(timestampMs).toISOString();
 };
 
+const handleRenderAuthorize = async (request: Request) => {
+  const { user } = await authenticateUser(request);
+  const body = await parseJsonBody(request);
+  const mode = String(body.mode || "").trim().toLowerCase();
+
+  if (!VALID_RENDER_MODES.has(mode)) {
+    throw new HttpError(400, "mode must be one of: render, test");
+  }
+
+  await requireActiveMembership(user.id);
+
+  const { ticket, payload } = await issueRenderAuthorizeTicket({
+    userId: user.id,
+    mode,
+  });
+
+  return json(200, {
+    ok: true,
+    mode,
+    jobTicket: ticket,
+    ticketType: "render-job-v1",
+    issuedAt: new Date(payload.issuedAtMs).toISOString(),
+    expiresAt: new Date(payload.expiresAtMs).toISOString(),
+    expiresInSeconds: RENDER_TICKET_TTL_SECONDS,
+    enforce: RENDER_GATE_ENFORCE,
+  });
+};
+
 const handleRenderSync = async (request: Request) => {
   const { user } = await authenticateUser(request);
   const body = await parseJsonBody(request);
@@ -842,13 +1106,51 @@ const handleRenderSync = async (request: Request) => {
 
   const { data: existingRow, error: existingError } = await serviceClient
     .from("render_jobs")
-    .select("id,status")
+    .select("id,user_id,mode,status")
     .eq("job_id", jobId)
     .limit(1)
     .maybeSingle();
 
   if (existingError) {
     throw new HttpError(502, `Failed to read render job: ${existingError.message}`);
+  }
+
+  if (RENDER_GATE_ENFORCE) {
+    if (status === "running") {
+      const ticket =
+        String(body.jobTicket || body.job_ticket || body.ticket || body.renderTicket || "").trim();
+      const payload = await verifyRenderAuthorizeTicket({
+        ticket,
+        userId: user.id,
+        mode,
+      });
+      activeRenderJobs.set(jobId, {
+        ticketId: payload.ticketId,
+        userId: user.id,
+        mode,
+        expiresAtMs: payload.expiresAtMs,
+      });
+    } else {
+      const activeAuthorization = activeRenderJobs.get(jobId);
+      if (activeAuthorization) {
+        if (activeAuthorization.userId !== user.id || activeAuthorization.mode !== mode) {
+          throw new HttpError(403, "Render authorization mismatch for this job");
+        }
+      } else {
+        const hasMatchingRunningRow =
+          Boolean(existingRow?.id)
+          && String(existingRow.user_id || "") === user.id
+          && String(existingRow.mode || "") === mode
+          && String(existingRow.status || "").toLowerCase() === "running";
+
+        if (!hasMatchingRunningRow) {
+          throw new HttpError(
+            403,
+            "Missing render authorization for this job. Call /render/authorize before rendering.",
+          );
+        }
+      }
+    }
   }
 
   const payload = {
@@ -881,6 +1183,10 @@ const handleRenderSync = async (request: Request) => {
     if (insertError) {
       throw new HttpError(502, `Failed to insert render job: ${insertError.message}`);
     }
+  }
+
+  if (status === "success" || status === "failed" || status === "stopped") {
+    activeRenderJobs.delete(jobId);
   }
 
   if (status === "success" && String(existingRow?.status || "") !== "success") {
@@ -1053,6 +1359,11 @@ Deno.serve(async (request) => {
     if (request.method === "POST" && routePath === "/verify-payment") {
       await authenticateUser(request); // enforce auth
       return await handleVerifyPayment(request);
+    }
+
+    if (request.method === "POST" && routePath === "/render/authorize") {
+      await authenticateUser(request); // enforce auth
+      return await handleRenderAuthorize(request);
     }
 
     if (request.method === "POST" && routePath === "/render/sync") {

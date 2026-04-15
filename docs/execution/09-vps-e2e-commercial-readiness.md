@@ -9,6 +9,7 @@ Tujuan:
 3. Memastikan endpoint `verify-payment` berjalan dengan token login.
 4. Memastikan webhook Midtrans tervalidasi signature dan memproses status.
 5. Memastikan status akhir invoice/membership siap untuk rilis komersial.
+6. Memastikan render gate (`/render/authorize`) menerbitkan job ticket valid.
 
 ## Prasyarat
 
@@ -122,6 +123,20 @@ echo "$VERIFY_JSON" | jq .
 Catatan:
 1. Jika pembayaran belum selesai, status bisa `pending`.
 2. Jika transaksi belum terlihat di Midtrans, response bisa `404` sementara.
+
+## 4b) Uji Render Gate Authorize
+
+```bash
+curl -sS -X POST "$API_BASE/render/authorize" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"render"}' | jq .
+```
+
+Kriteria lulus:
+1. response `ok: true`.
+2. ada `jobTicket`.
+3. ada `expiresAt`.
 
 ## 5) Selesaikan pembayaran di Midtrans
 

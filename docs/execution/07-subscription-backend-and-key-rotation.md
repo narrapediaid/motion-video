@@ -16,6 +16,7 @@ Rute yang dipakai desktop app:
 - `POST /checkout`
 - `POST /verify-payment`
 - `POST /voucher/validate`
+- `POST /render/authorize` (server-side render gate: issue job ticket)
 - `POST /render/sync` (sinkron status job render per user)
 - `GET /render/summary` (total proyek selesai per user)
 - `GET /health`
@@ -27,6 +28,14 @@ Base URL yang harus diisi ke env desktop publik:
 
 ```dotenv
 SUBSCRIPTION_BACKEND_URL=https://YOUR_PROJECT.functions.supabase.co/functions/v1/subscription-api
+```
+
+Env tambahan backend (disarankan untuk hardening render gate):
+
+```dotenv
+RENDER_GATE_SECRET=long_random_secret
+RENDER_GATE_ENFORCE=true
+RENDER_TICKET_TTL_SECONDS=120
 ```
 
 ## Deploy Steps
@@ -74,6 +83,7 @@ Yang tidak boleh ada di app publik:
 - `MIDTRANS_SERVER_KEY`
 - `SUPABASE_ACCESS_TOKEN`
 - `SUPABASE_DB_PASSWORD`
+- `RENDER_GATE_SECRET`
 
 ## Key Rotation Runbook
 
