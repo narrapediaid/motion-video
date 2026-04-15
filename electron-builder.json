@@ -1,0 +1,60 @@
+{
+  "appId": "com.motionvideo.batchui",
+  "productName": "Motion Video Batch UI",
+  "directories": {
+    "output": "release"
+  },
+  "asar": false,
+  "extraMetadata": {
+    "main": "desktop/main.cjs"
+  },
+  "files": [
+    "desktop/**/*",
+    "scripts/**/*",
+    "batch/**/*",
+    "src/**/*",
+    "public/**/*",
+    "package.json",
+    "remotion.config.ts",
+    "tsconfig.json",
+    ".env.example",
+    ".env.public.example",
+    "!scripts/deploy-subscription-backend.bat",
+    "!scripts/midtrans-sandbox-e2e.mjs",
+    "!scripts/midtrans-sandbox-payload.mjs",
+    "!**/*.log",
+    "!**/.git/**",
+    "!**/.github/**",
+    "!**/node_modules/.cache/**",
+    "!release/**",
+    "!dist/**",
+    "!out/**"
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      },
+      {
+        "target": "portable",
+        "arch": [
+          "x64"
+        ]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "include": "scripts/installer-log.nsh",
+    "artifactName": "${productName}-Setup-${version}.${ext}"
+  },
+  "portable": {
+    "artifactName": "${productName}-Portable-${version}.${ext}"
+  }
+}

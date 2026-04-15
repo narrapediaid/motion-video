@@ -1,0 +1,50 @@
+{
+  "name": "motion-video",
+  "version": "1.0.0",
+  "description": "My Remotion video",
+  "repository": {},
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@remotion/cli": "4.0.448",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.448",
+    "@remotion/tailwind-v4": "4.0.448",
+    "tailwindcss": "4.0.0",
+    "electron-updater": "6.3.9"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "4.0.448",
+    "@types/react": "19.2.7",
+    "@types/web": "0.0.166",
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8",
+    "eslint": "9.19.0",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "build": "remotion bundle",
+    "upgrade": "remotion upgrade",
+    "lint": "eslint src && tsc",
+    "batch:render": "node scripts/batch-render.mjs --input batch/tasks.tsk --out out/batch",
+    "batch:test": "node scripts/batch-render.mjs --input batch/tasks.tsk --out out/batch --frames 0-60 --limit 1",
+    "batch:ui": "node scripts/batch-ui.mjs",
+    "supabase:deploy": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-deploy.ps1",
+    "supabase:deploy:function": "powershell -ExecutionPolicy Bypass -File ./scripts/supabase-deploy.ps1 -DeployFunctionOnly",
+    "midtrans:payload": "node scripts/midtrans-sandbox-payload.mjs",
+    "midtrans:test:e2e": "node scripts/midtrans-sandbox-e2e.mjs",
+    "midtrans:test:e2e:cleanup-fault": "node scripts/midtrans-sandbox-e2e.mjs --fault-cleanup",
+    "setup:desktop": "npm install",
+    "desktop:dev": "electron ./desktop/main.cjs",
+    "desktop:build": "electron-builder --win nsis portable",
+    "desktop:dist": "electron-builder --win",
+    "desktop:build:ci": "electron-builder --win --publish never",
+    "desktop:dist:ci": "electron-builder --win --publish always"
+  },
+  "sideEffects": [
+    "*.css"
+  ]
+}

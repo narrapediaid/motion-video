@@ -1,0 +1,39 @@
+{
+  "columns": [
+    {
+      "name": "Kolom Produk",
+      "lists": [
+        {
+          "name": "List April",
+          "items": [
+            {
+              "title": "Promo Launch Video",
+              "content": "Buka dengan headline utama dan visual produk 2 detik."
+            },
+            {
+              "title": "Fitur Utama",
+              "content": "Tampilkan 3 fitur inti dengan transisi smooth."
+            },
+            {
+              "title": "Testimoni",
+              "content": "Masukkan kutipan pengguna dan logo brand partner."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Kolom Edukasi",
+      "lists": [
+        {
+          "name": "List Tips",
+          "items": [
+            "Hook pembuka 3 detik",
+            "Step by step utama",
+            "Closing CTA"
+          ]
+        }
+      ]
+    }
+  ]
+}

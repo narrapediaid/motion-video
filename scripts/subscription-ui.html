@@ -1,0 +1,1895 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Portal Keanggotaan</title>
+    <style>
+      :root {
+        --bg-0: #07101b;
+        --bg-1: #0c1a2d;
+        --bg-2: #132a44;
+        --panel: rgba(13, 28, 48, 0.86);
+        --panel-strong: rgba(10, 22, 38, 0.95);
+        --line: #284a72;
+        --line-soft: #1d3857;
+        --text: #e9f1ff;
+        --muted: #99abc6;
+        --info: #9bd2ff;
+        --ok: #5de7b6;
+        --warn: #ffd08a;
+        --bad: #ff9d9d;
+        --accent: #2dd4bf;
+        --accent-soft: rgba(45, 212, 191, 0.2);
+        --focus: #7dd3fc;
+        --radius-xl: 20px;
+        --radius-lg: 16px;
+        --radius-sm: 12px;
+        --shadow: 0 16px 34px rgba(0, 0, 0, 0.32);
+      }
+
+      * {
+        box-sizing: border-box;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(111, 184, 244, 0.75) rgba(8, 20, 35, 0.72);
+      }
+
+      *::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+
+      *::-webkit-scrollbar-track {
+        background: rgba(8, 20, 35, 0.72);
+        border-radius: 999px;
+      }
+
+      *::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(125, 211, 252, 0.9), rgba(45, 212, 191, 0.85));
+        border: 2px solid rgba(8, 20, 35, 0.72);
+        border-radius: 999px;
+      }
+
+      *::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(180deg, rgba(146, 222, 255, 0.95), rgba(93, 231, 182, 0.92));
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        font-family: "Bahnschrift", "Trebuchet MS", "Segoe UI", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(60% 50% at 88% 6%, rgba(45, 212, 191, 0.15), transparent 70%),
+          radial-gradient(58% 52% at 2% 0%, rgba(125, 211, 252, 0.14), transparent 72%),
+          linear-gradient(145deg, var(--bg-1), var(--bg-0) 62%);
+      }
+
+      .page-shell {
+        max-width: 1380px;
+        margin: 0 auto;
+        padding: 24px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .hero {
+        position: relative;
+        background: var(--panel);
+        border: 1px solid var(--line-soft);
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow);
+        padding: 22px;
+        overflow: hidden;
+      }
+
+      .hero::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        border-radius: inherit;
+        background: linear-gradient(120deg, rgba(125, 211, 252, 0.12), transparent 34%);
+      }
+
+      .hero-layout {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1.1fr auto;
+        gap: 16px;
+        align-items: start;
+      }
+
+      .hero-copy {
+        display: grid;
+        gap: 10px;
+      }
+
+      .eyebrow {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+        color: var(--info);
+      }
+
+      .title {
+        margin: 0;
+        font-size: clamp(1.65rem, 1.35rem + 1.3vw, 2.35rem);
+        line-height: 1.18;
+      }
+
+      .subtitle {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+        line-height: 1.56;
+        max-width: 72ch;
+      }
+
+      .hero-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        align-items: flex-start;
+      }
+
+      .hero-signals {
+        margin-top: 14px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .signal {
+        border: 1px solid rgba(67, 113, 161, 0.5);
+        border-radius: var(--radius-sm);
+        background: rgba(7, 17, 30, 0.55);
+        padding: 10px;
+      }
+
+      .signal-label {
+        margin: 0;
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+      }
+
+      .signal-value {
+        margin: 6px 0 0;
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .workspace {
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+      }
+
+      .aside-column {
+        flex: 0 0 360px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .main-column {
+        flex: 1;
+        display: grid;
+        gap: 16px;
+      }
+
+      .card {
+        background: linear-gradient(165deg, var(--panel), var(--panel-strong));
+        border: 1px solid var(--line-soft);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        padding: 18px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        border-radius: inherit;
+        background: linear-gradient(120deg, rgba(125, 211, 252, 0.08), transparent 34%);
+      }
+
+      .card > * {
+        position: relative;
+      }
+
+      .card h2,
+      .card h3,
+      .card h4 {
+        margin: 0;
+      }
+
+      .card p.meta {
+        margin: 8px 0 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+        line-height: 1.5;
+      }
+
+      .stack {
+        margin-top: 14px;
+        display: grid;
+        gap: 10px;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        font-size: 0.86rem;
+        color: var(--muted);
+      }
+
+      input,
+      select,
+      button,
+      textarea {
+        font-family: inherit;
+        font-size: 0.93rem;
+      }
+
+      input,
+      select {
+        width: 100%;
+        border: 1px solid #34597f;
+        border-radius: var(--radius-sm);
+        padding: 11px;
+        background: rgba(6, 14, 25, 0.6);
+        color: var(--text);
+      }
+
+      input::placeholder {
+        color: #8094b0;
+      }
+
+      input:focus,
+      select:focus,
+      .btn:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+      }
+
+      .btn {
+        border: 1px solid transparent;
+        border-radius: 12px;
+        padding: 10px 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.12s ease, border-color 0.14s ease, background 0.14s ease, color 0.14s ease;
+        min-height: 40px;
+      }
+
+      .btn:active {
+        transform: translateY(1px);
+      }
+
+      .btn-primary {
+        background: linear-gradient(130deg, rgba(45, 212, 191, 0.26), rgba(125, 211, 252, 0.24));
+        border-color: rgba(121, 189, 246, 0.55);
+        color: #dff2ff;
+      }
+
+      .btn-primary:hover:not(:disabled) {
+        border-color: rgba(146, 211, 255, 0.86);
+        color: #f2f9ff;
+      }
+
+      .btn-soft {
+        background: rgba(109, 166, 221, 0.16);
+        border-color: rgba(115, 168, 220, 0.48);
+        color: #d8ecff;
+      }
+
+      .btn-soft:hover:not(:disabled) {
+        background: rgba(125, 189, 248, 0.2);
+      }
+
+      .btn-ghost {
+        background: rgba(7, 18, 31, 0.5);
+        color: var(--muted);
+        border-color: rgba(67, 113, 161, 0.45);
+      }
+
+      .btn-ghost:hover:not(:disabled) {
+        border-color: rgba(126, 174, 221, 0.6);
+        color: #d9eaff;
+      }
+
+      .btn:disabled {
+        cursor: not-allowed;
+        opacity: 0.65;
+      }
+
+      .auth-toolbar {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .auth-toolbar .btn {
+        flex: 1;
+        min-width: 130px;
+      }
+
+      .auth-mode-signup .signup-only {
+        display: grid;
+      }
+
+      .signup-only {
+        display: none;
+      }
+
+      .user-box {
+        margin-top: 14px;
+        border: 1px dashed rgba(74, 122, 173, 0.5);
+        border-radius: 12px;
+        padding: 10px;
+        background: rgba(6, 14, 25, 0.46);
+      }
+
+      .user-box strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .plans {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 14px;
+      }
+
+      .plan {
+        border: 1px solid #365980;
+        border-radius: 14px;
+        padding: 14px;
+        background: rgba(7, 17, 30, 0.58);
+        display: grid;
+        gap: 10px;
+      }
+
+      .plan.active {
+        border-color: #49c5ff;
+        box-shadow: 0 0 0 3px rgba(73, 197, 255, 0.2);
+      }
+
+      .plan.locked {
+        opacity: 0.7;
+      }
+
+      .lock-note {
+        margin-top: 10px;
+        grid-column: 1 / -1;
+        font-size: 0.85rem;
+        color: #ffe1a8;
+        background: rgba(94, 64, 13, 0.34);
+        border: 1px solid rgba(255, 191, 73, 0.4);
+        border-radius: 10px;
+        padding: 8px 10px;
+      }
+
+      .plan h3 {
+        margin: 0;
+        font-size: 1.05rem;
+      }
+
+      .plan-kicker {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+        color: #d7ecff;
+        background: rgba(124, 189, 245, 0.16);
+        border: 1px solid rgba(124, 189, 245, 0.36);
+      }
+
+      .price {
+        font-size: 1.4rem;
+        font-weight: 700;
+      }
+
+      .plan-usp {
+        margin: 0;
+        color: #cbd9ee;
+        font-size: 0.86rem;
+        line-height: 1.52;
+      }
+
+      .plan-points {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 6px;
+      }
+
+      .plan-points li {
+        color: #9fb3ce;
+        font-size: 0.8rem;
+        line-height: 1.45;
+      }
+
+      .plan-points li::before {
+        content: "•";
+        color: var(--accent);
+        margin-right: 6px;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        font-size: 0.76rem;
+        font-weight: 600;
+        padding: 4px 10px;
+      }
+
+      .badge.ok {
+        background: rgba(93, 231, 182, 0.18);
+        color: var(--ok);
+      }
+
+      .badge.warn {
+        background: rgba(255, 208, 138, 0.2);
+        color: var(--warn);
+      }
+
+      .badge.bad {
+        background: rgba(255, 157, 157, 0.2);
+        color: var(--bad);
+      }
+
+      .status-grid {
+        margin-top: 14px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      .status-box {
+        border: 1px solid #35587f;
+        border-radius: 14px;
+        background: rgba(7, 17, 30, 0.58);
+        padding: 12px;
+      }
+
+      .status-box h4 {
+        margin: 0;
+      }
+
+      .status-detail {
+        margin-top: 8px;
+        display: grid;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+        font-size: 0.86rem;
+      }
+
+      th,
+      td {
+        text-align: left;
+        border-bottom: 1px solid rgba(63, 100, 141, 0.42);
+        padding: 8px 6px;
+        white-space: nowrap;
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      .logs {
+        margin-top: 14px;
+        border: 1px solid #365b83;
+        border-radius: 12px;
+        background: rgba(6, 14, 25, 0.55);
+        padding: 10px;
+        min-height: 120px;
+        max-height: 220px;
+        overflow: auto;
+        font-size: 0.83rem;
+        color: #b9cae2;
+      }
+
+      .logs::-webkit-scrollbar {
+        width: 12px;
+      }
+
+      .logs::-webkit-scrollbar-thumb {
+        border-width: 3px;
+      }
+
+      .log-item {
+        padding: 7px 0;
+        border-bottom: 1px dashed rgba(61, 99, 141, 0.42);
+      }
+
+      .log-item:last-child {
+        border-bottom: 0;
+      }
+
+      .empty {
+        color: var(--muted);
+        font-style: italic;
+      }
+
+      .status-chip {
+        border: 1px solid rgba(121, 189, 246, 0.4);
+        background: rgba(7, 18, 31, 0.56);
+        color: #d8ecff;
+        border-radius: 999px;
+        padding: 9px 14px;
+        font-size: 0.82rem;
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .voucher-applied-banner {
+        margin-top: 14px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(93, 231, 182, 0.45);
+        background: rgba(15, 74, 57, 0.36);
+        color: #9ff7d4;
+        font-size: 0.84rem;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+      }
+
+      .voucher-applied-banner[hidden] {
+        display: none !important;
+      }
+
+      .voucher-applied-banner::before {
+        content: "Voucher Applied";
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 4px 8px;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: #06271e;
+        background: rgba(93, 231, 182, 0.95);
+      }
+
+      .coupon-code {
+        min-width: 220px;
+        max-width: 320px;
+        flex: 1 1 240px;
+        text-transform: uppercase;
+        letter-spacing: 0.45px;
+      }
+
+      .coupon-code::placeholder {
+        text-transform: none;
+        letter-spacing: normal;
+      }
+
+      .row .btn {
+        min-width: 140px;
+      }
+
+      @media (max-width: 1080px) {
+        .workspace {
+          flex-direction: column;
+        }
+
+        .aside-column {
+          flex-basis: auto;
+          width: 100%;
+        }
+
+        .hero-layout {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-actions {
+          justify-content: flex-start;
+        }
+
+        .hero-signals {
+          grid-template-columns: 1fr;
+        }
+
+        .plans {
+          grid-template-columns: 1fr;
+        }
+
+        .status-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page-shell">
+      <section class="hero">
+        <div class="hero-layout">
+          <div class="hero-copy">
+            <p class="eyebrow">Portal Keanggotaan</p>
+            <h1 class="title">Aktifkan Akses Premium untuk Workflow Produksi yang Lebih Cepat</h1>
+            <p class="subtitle">
+              Pilih paket yang paling sesuai dengan kebutuhan tim Anda, amankan pembayaran dengan Midtrans, dan pantau status keanggotaan secara real-time dalam satu dashboard.
+            </p>
+
+            <div class="hero-signals">
+              <div class="signal">
+                <p class="signal-label">Keamanan</p>
+                <p class="signal-value">Otorisasi server validation</p>
+              </div>
+              <div class="signal">
+                <p class="signal-label">Pembayaran</p>
+                <p class="signal-value">Checkout Midtrans Snap yang aman dan cepat</p>
+              </div>
+              <div class="signal">
+                <p class="signal-label">Status</p>
+                <p class="signal-value">Pemantauan invoice dan keanggotaan secara real-time</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="hero-actions">
+            <a class="btn btn-ghost" href="/">Kembali ke Dashboard Utama</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <aside class="aside-column">
+          <article class="card" id="authCard">
+            <h2 id="authCardTitle">Akses Akun</h2>
+            <p class="meta" id="authCardMeta">Silahkan Login atau Registrasi terlebih dahulu untuk mengaktifkan akses dan menjalankan program</p>
+
+            <div class="auth-toolbar" id="authToolbar" style="margin-top: 12px">
+              <button class="btn btn-soft" id="modeLoginBtn" type="button">Masuk</button>
+              <button class="btn btn-ghost" id="modeSignupBtn" type="button">Registrasi</button>
+            </div>
+
+            <form id="authForm" class="stack" style="margin-top: 12px">
+              <label class="signup-only">
+                Nama Lengkap
+                <input id="fullNameInput" type="text" placeholder="Contoh: Budi Santoso" autocomplete="name" />
+              </label>
+              <label>
+                Email
+                <input id="emailInput" type="email" required placeholder="nama@perusahaan.com" autocomplete="email" />
+              </label>
+              <label>
+                Kata Sandi
+                <input id="passwordInput" type="password" required placeholder="Minimal 6 karakter" autocomplete="current-password" />
+              </label>
+              <button class="btn btn-primary" id="authSubmitBtn" type="submit">Masuk</button>
+            </form>
+
+            <div class="user-box" id="userBox">
+              <strong>Belum masuk</strong>
+              <span id="userEmail">Silakan masuk untuk membuka paket dan memulai checkout.</span>
+              <div class="status-detail" id="profileDetails" style="margin-top: 8px"></div>
+              <div class="row" style="margin-top: 10px">
+                <button class="btn btn-ghost" id="logoutBtn" type="button" disabled>Keluar</button>
+              </div>
+            </div>
+          </article>
+        </aside>
+
+        <main class="main-column">
+          <article class="card">
+            <h2>Paket Langganan</h2>
+            <p class="meta">Pilih paket terbaik untuk meningkatkan kapasitas kerja, stabilitas proses, dan kontinuitas produksi tim Anda.</p>
+
+            <div class="plans" id="plansContainer"></div>
+
+            <div class="voucher-applied-banner" id="voucherAppliedBadge" hidden></div>
+
+            <div class="row" style="margin-top: 14px">
+              <input class="coupon-code" id="couponInput" type="text" placeholder="Masukkan Coupon atau Voucher" />
+              <button class="btn btn-soft" id="checkCouponBtn" type="button">Cek Coupon/Voucher</button>
+              <button class="btn btn-primary" id="checkoutBtn" type="button" disabled>Lanjut Checkout</button>
+              <button class="btn btn-soft" id="refreshBtn" type="button">Perbarui Status</button>
+            </div>
+
+            <div class="status-grid">
+              <div class="status-box">
+                <h4>Ringkasan Keanggotaan</h4>
+                <div class="status-detail" id="membershipStatus"></div>
+              </div>
+              <div class="status-box">
+                <h4>Ringkasan Pembayaran Terkini</h4>
+                <div class="status-detail" id="latestPaymentStatus"></div>
+              </div>
+            </div>
+
+            <h2 style="margin-top: 16px">Riwayat Invoice dan Tindakan</h2>
+            <div style="overflow: auto">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Order ID</th>
+                    <th>Status</th>
+                    <th>Nominal</th>
+                    <th>Waktu Bayar</th>
+                    <th>Tindakan</th>
+                  </tr>
+                </thead>
+                <tbody id="invoiceRows"></tbody>
+              </table>
+            </div>
+
+            <div class="logs" id="logs"></div>
+          </article>
+        </main>
+      </section>
+    </div>
+
+    <script type="module">
+      import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+      const authCard = document.getElementById("authCard");
+      const authCardTitle = document.getElementById("authCardTitle");
+      const authCardMeta = document.getElementById("authCardMeta");
+      const authToolbar = document.getElementById("authToolbar");
+      const modeLoginBtn = document.getElementById("modeLoginBtn");
+      const modeSignupBtn = document.getElementById("modeSignupBtn");
+      const authForm = document.getElementById("authForm");
+      const authSubmitBtn = document.getElementById("authSubmitBtn");
+      const fullNameInput = document.getElementById("fullNameInput");
+      const emailInput = document.getElementById("emailInput");
+      const passwordInput = document.getElementById("passwordInput");
+      const userBox = document.getElementById("userBox");
+      const userEmail = document.getElementById("userEmail");
+      const profileDetails = document.getElementById("profileDetails");
+      const logoutBtn = document.getElementById("logoutBtn");
+      const plansContainer = document.getElementById("plansContainer");
+      const voucherAppliedBadge = document.getElementById("voucherAppliedBadge");
+      const couponInput = document.getElementById("couponInput");
+      const checkCouponBtn = document.getElementById("checkCouponBtn");
+      const checkoutBtn = document.getElementById("checkoutBtn");
+      const refreshBtn = document.getElementById("refreshBtn");
+      const membershipStatus = document.getElementById("membershipStatus");
+      const latestPaymentStatus = document.getElementById("latestPaymentStatus");
+      const invoiceRows = document.getElementById("invoiceRows");
+      const logs = document.getElementById("logs");
+
+      const state = {
+        mode: "login",
+        supabase: null,
+        session: null,
+        plans: [],
+        selectedPlanId: "",
+        checkedVoucher: null,
+        voucherPreviewByPlan: {},
+        midtransMode: "sandbox",
+        midtransClientKey: "",
+        midtransSnapReady: false,
+        membership: null,
+        checkoutLock: {
+          locked: false,
+          reason: "",
+        },
+      };
+
+      const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+
+      const moneyIdr = new Intl.NumberFormat("id-ID", {
+        style: "currency",
+        currency: "IDR",
+        maximumFractionDigits: 0,
+      });
+
+      const log = (message, tone = "info") => {
+        const el = document.createElement("div");
+        el.className = "log-item";
+        const now = new Date().toLocaleTimeString("id-ID");
+
+        let prefix = "[INFO]";
+        if (tone === "error") prefix = "[ERROR]";
+        if (tone === "ok") prefix = "[OK]";
+
+        el.textContent = `${now} ${prefix} ${message}`;
+        logs.prepend(el);
+      };
+
+      const parseApiResponse = async (response) => {
+        const raw = await response.text();
+        let data = null;
+
+        try {
+          data = raw ? JSON.parse(raw) : null;
+        } catch {
+          data = { raw };
+        }
+
+        if (!response.ok) {
+          const error = new Error(data?.error || `Request failed (${response.status})`);
+          error.status = response.status;
+          error.payload = data;
+          throw error;
+        }
+
+        return data;
+      };
+
+      const apiFetch = async (url, options = {}) => {
+        const headers = {
+          ...(options.headers || {}),
+        };
+
+        if (state.session?.access_token) {
+          headers.Authorization = `Bearer ${state.session.access_token}`;
+        }
+
+        const response = await fetch(url, {
+          ...options,
+          headers,
+        });
+
+        return parseApiResponse(response);
+      };
+
+      const validateVoucherWithFallback = async ({ planId, voucherCode }) => {
+        const endpoints = [
+          "/api/subscription/voucher/validate",
+          "/api/subscription/voucher/check",
+          "/api/subscription/voucher/claim",
+        ];
+
+        let lastError = null;
+
+        for (const endpoint of endpoints) {
+          try {
+            return await apiFetch(endpoint, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                planId,
+                voucherCode,
+              }),
+            });
+          } catch (error) {
+            lastError = error;
+            if (Number(error?.status) !== 404) {
+              throw error;
+            }
+          }
+        }
+
+        throw lastError || new Error("Endpoint validasi voucher tidak ditemukan.");
+      };
+
+      const clearVoucherPreview = () => {
+        state.checkedVoucher = null;
+        state.voucherPreviewByPlan = {};
+      };
+
+      const validateVoucherForAllPlans = async (voucherCode) => {
+        if (!Array.isArray(state.plans) || state.plans.length === 0) {
+          throw new Error("Daftar paket belum tersedia. Silakan perbarui status terlebih dahulu.");
+        }
+
+        const checks = await Promise.all(
+          state.plans.map(async (plan) => {
+            try {
+              const result = await validateVoucherWithFallback({
+                planId: plan.id,
+                voucherCode,
+              });
+
+              return {
+                planId: plan.id,
+                voucher: result?.voucher || null,
+              };
+            } catch (error) {
+              if (Number(error?.status) === 400) {
+                return {
+                  planId: plan.id,
+                  voucher: null,
+                };
+              }
+
+              return {
+                planId: plan.id,
+                voucher: null,
+                error,
+              };
+            }
+          }),
+        );
+
+        const voucherPreviewByPlan = {};
+        let validCount = 0;
+        let firstVoucher = null;
+        let firstError = null;
+
+        checks.forEach((item) => {
+          if (item?.error && !firstError) {
+            firstError = item.error;
+          }
+
+          const voucher = item?.voucher;
+          if (!voucher) {
+            return;
+          }
+
+          const planAmountIdr = Number(voucher.planAmountIdr);
+          const finalAmountIdr = Number(voucher.finalAmountIdr);
+          const hasDiscount = Number.isFinite(planAmountIdr)
+            && Number.isFinite(finalAmountIdr)
+            && finalAmountIdr < planAmountIdr;
+
+          if (!hasDiscount) {
+            return;
+          }
+
+          voucherPreviewByPlan[item.planId] = voucher;
+          validCount += 1;
+          if (!firstVoucher) {
+            firstVoucher = voucher;
+          }
+        });
+
+        if (validCount === 0) {
+          if (firstError) {
+            throw firstError;
+          }
+          throw new Error("Voucher tidak berlaku untuk paket mana pun.");
+        }
+
+        return {
+          voucherPreviewByPlan,
+          validCount,
+          firstVoucher,
+        };
+      };
+
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      const signInWithRetry = async ({ email, password, maxAttempts = 3 }) => {
+        let lastError = null;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          const { data, error } = await state.supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+
+          if (!error && data?.session) {
+            return { data, error: null };
+          }
+
+          lastError = error || new Error("Sesi masuk tidak tersedia.");
+          const isInvalidCreds = /invalid login credentials/i.test(String(lastError.message || ""));
+
+          if (!isInvalidCreds || attempt === maxAttempts) {
+            break;
+          }
+
+          await wait(450 * attempt);
+        }
+
+        return { data: null, error: lastError };
+      };
+
+      const syncServerAccessGateSession = async (session) => {
+        if (session?.access_token) {
+          await apiFetch("/api/subscription/session", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              accessToken: session.access_token,
+            }),
+          });
+          return;
+        }
+
+        await apiFetch("/api/subscription/session", {
+          method: "DELETE",
+        });
+      };
+
+      const loadMidtransSnapScript = async () => {
+        if (!state.midtransClientKey) {
+          log("Client key Midtrans belum tersedia. Checkout akan menggunakan URL pengalihan.", "error");
+          state.midtransSnapReady = false;
+          return;
+        }
+
+        const existing = document.querySelector("script[data-midtrans-snap='1']");
+        if (existing && window.snap) {
+          state.midtransSnapReady = true;
+          return;
+        }
+
+        const scriptUrl = state.midtransMode === "production"
+          ? "https://app.midtrans.com/snap/snap.js"
+          : "https://app.sandbox.midtrans.com/snap/snap.js";
+
+        await new Promise((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = scriptUrl;
+          script.setAttribute("data-client-key", state.midtransClientKey);
+          script.setAttribute("data-midtrans-snap", "1");
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error("Gagal memuat skrip Midtrans Snap"));
+          document.head.appendChild(script);
+        });
+
+        state.midtransSnapReady = Boolean(window.snap);
+        if (!state.midtransSnapReady) {
+          throw new Error("Midtrans Snap tidak tersedia setelah script dimuat");
+        }
+      };
+
+      const setMode = (mode) => {
+        state.mode = mode;
+        authCard.classList.toggle("auth-mode-signup", mode === "signup");
+
+        if (mode === "signup") {
+          authSubmitBtn.textContent = "Daftarkan Akun";
+          modeSignupBtn.className = "btn btn-soft";
+          modeLoginBtn.className = "btn btn-ghost";
+          passwordInput.autocomplete = "new-password";
+        } else {
+          authSubmitBtn.textContent = "Masuk";
+          modeSignupBtn.className = "btn btn-ghost";
+          modeLoginBtn.className = "btn btn-soft";
+          passwordInput.autocomplete = "current-password";
+        }
+      };
+
+      const normalizeStatusBadge = (status) => {
+        const value = String(status || "-").toLowerCase();
+
+        if (["active", "paid", "settlement", "capture", "lifetime_active"].includes(value)) {
+          return "ok";
+        }
+
+        if (["pending", "pending_payment", "open", "incomplete"].includes(value)) {
+          return "warn";
+        }
+
+        if (["expired", "cancel", "canceled", "void", "failed", "deny", "suspended"].includes(value)) {
+          return "bad";
+        }
+
+        return "warn";
+      };
+
+      const badgeHtml = (status) => {
+        const tone = normalizeStatusBadge(status);
+        return `<span class="badge ${tone}">${status || "-"}</span>`;
+      };
+
+      const formatDateTime = (value) => {
+        if (!value) return "-";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return String(value);
+        return date.toLocaleString("id-ID", {
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
+      };
+
+      const formatMembershipEnd = (membership) => {
+        const status = String(membership?.status || "").toLowerCase();
+        if (status === "lifetime_active") {
+          return "Lifetime (tanpa tanggal berakhir)";
+        }
+        return formatDateTime(membership?.ends_at);
+      };
+
+      const getCheckoutLockState = (membership) => {
+        const status = String(membership?.status || "").toLowerCase();
+
+        if (status === "lifetime_active") {
+          return {
+            locked: true,
+            reason: "Keanggotaan lifetime sedang aktif. Checkout paket baru dinonaktifkan.",
+          };
+        }
+
+        if (status !== "active") {
+          return {
+            locked: false,
+            reason: "",
+          };
+        }
+
+        const endsAt = Date.parse(String(membership?.ends_at || ""));
+        if (!Number.isFinite(endsAt)) {
+          return {
+            locked: true,
+            reason: "Keanggotaan aktif masih berjalan. Perpanjangan dibuka saat sisa masa aktif 3 hari.",
+          };
+        }
+
+        const now = Date.now();
+        const remainingMs = endsAt - now;
+        if (remainingMs > THREE_DAYS_MS) {
+          const unlockAt = new Date(endsAt - THREE_DAYS_MS);
+          return {
+            locked: true,
+            reason: `Perpanjangan dibuka saat H-3 (${formatDateTime(unlockAt.toISOString())}).`,
+          };
+        }
+
+        return {
+          locked: false,
+          reason: "",
+        };
+      };
+
+      const applyCheckoutAvailability = () => {
+        if (!state.session || !state.selectedPlanId || state.checkoutLock.locked) {
+          checkoutBtn.disabled = true;
+        } else {
+          checkoutBtn.disabled = false;
+        }
+
+        if (state.checkoutLock.locked) {
+          checkoutBtn.textContent = "Checkout Terkunci";
+          checkoutBtn.title = state.checkoutLock.reason;
+        } else {
+          checkoutBtn.textContent = "Lanjut Checkout";
+          checkoutBtn.title = "";
+        }
+      };
+
+      const checkCouponOrVoucher = async () => {
+        const rawCode = String(couponInput?.value || "").trim();
+        const normalized = rawCode.toUpperCase();
+
+        if (!normalized) {
+          log("Masukkan kode Coupon atau Voucher terlebih dahulu.", "error");
+          return;
+        }
+
+        if (!/^[A-Z0-9-]{4,32}$/.test(normalized)) {
+          log("Format kode Coupon/Voucher tidak valid.", "error");
+          return;
+        }
+
+        if (!state.session) {
+          log("Silakan login terlebih dahulu sebelum memvalidasi voucher.", "error");
+          return;
+        }
+
+        if (!state.selectedPlanId) {
+          log("Pilih paket terlebih dahulu sebelum cek voucher.", "error");
+          return;
+        }
+
+        checkCouponBtn.disabled = true;
+
+        try {
+          const result = await validateVoucherForAllPlans(normalized);
+
+          state.voucherPreviewByPlan = result.voucherPreviewByPlan;
+          state.checkedVoucher = state.voucherPreviewByPlan[state.selectedPlanId] || result.firstVoucher || null;
+          couponInput.value = state.checkedVoucher?.code || normalized;
+
+          const selectedVoucher = state.voucherPreviewByPlan[state.selectedPlanId] || null;
+          if (selectedVoucher) {
+            log(
+              `Voucher ${selectedVoucher.code} valid di ${result.validCount} paket. Potongan paket terpilih ${moneyIdr.format(Number(selectedVoucher.discountIdr || 0))}, total bayar ${moneyIdr.format(Number(selectedVoucher.finalAmountIdr || 0))}.`,
+              "ok",
+            );
+          } else if (state.checkedVoucher) {
+            log(`Voucher ${state.checkedVoucher.code} valid di ${result.validCount} paket.`, "ok");
+          }
+
+          renderPlans();
+        } catch (error) {
+          clearVoucherPreview();
+          renderPlans();
+          if (Number(error?.status) === 404 || /not found/i.test(String(error?.message || ""))) {
+            log("Endpoint voucher tidak ditemukan. Jalankan halaman melalui npm run batch:ui agar API subscription aktif.", "error");
+          } else {
+            log(error.message || String(error), "error");
+          }
+        } finally {
+          checkCouponBtn.disabled = false;
+        }
+      };
+
+      const getPlanConversionCopy = (plan) => {
+        const combined = [plan?.code, plan?.tier, plan?.name]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        const billingMonths = Number(plan?.billing_cycle_months || 0);
+
+        const isLifetime = combined.includes("lifetime") || billingMonths === 0;
+        const isYearly = combined.includes("tahunan") || combined.includes("yearly") || combined.includes("annual") || billingMonths >= 12;
+        const isMonthly = combined.includes("bulanan") || combined.includes("monthly") || billingMonths === 1;
+
+        if (isLifetime) {
+          return {
+            kicker: "Akses Permanen",
+            usp: "Satu kali pembayaran untuk penggunaan jangka panjang tanpa tagihan berulang.",
+            points: [
+              "Maksimal 5 PC untuk satu akun bisnis.",
+              "Ideal untuk operasional yang membutuhkan kepastian biaya.",
+              "Tidak perlu perpanjangan periodik.",
+            ],
+            cta: "Pilih Paket Lifetime",
+          };
+        }
+
+        if (isYearly) {
+          return {
+            kicker: "Nilai Terbaik",
+            usp: "Efisiensi biaya paling optimal untuk tim dengan ritme produksi konsisten sepanjang tahun.",
+            points: [
+              "Maksimal 2 PC untuk operasional tim kecil-menengah.",
+              "Biaya per bulan lebih hemat dibanding paket bulanan.",
+              "Cocok untuk target growth dan skalabilitas tim.",
+            ],
+            cta: "Pilih Paket Tahunan",
+          };
+        }
+
+        if (isMonthly) {
+          return {
+            kicker: "Paling Fleksibel",
+            usp: "Mulai cepat dengan komitmen pendek untuk validasi kebutuhan sebelum upgrade ke paket lebih besar.",
+            points: [
+              "Hanya untuk 1 PC per akun.",
+              "Cocok untuk trial operasional dan tim baru.",
+              "Mudah disesuaikan mengikuti prioritas bulanan.",
+            ],
+            cta: "Pilih Paket Bulanan",
+          };
+        }
+
+        return {
+          kicker: "Pilihan Profesional",
+          usp: "Dirancang untuk menjaga performa produksi tetap stabil sesuai kebutuhan operasional Anda.",
+          points: [
+            "Memberikan keseimbangan biaya dan kapasitas kerja.",
+            "Mendukung kesinambungan workflow harian.",
+          ],
+          cta: "Pilih Paket Ini",
+        };
+      };
+
+      const renderPlans = () => {
+        plansContainer.innerHTML = "";
+
+        const voucherPreviewByPlan = state.voucherPreviewByPlan || {};
+        const voucherPreviewEntries = Object.entries(voucherPreviewByPlan);
+        const hasVoucherPreview = voucherPreviewEntries.length > 0;
+        const selectedVoucher = state.selectedPlanId
+          ? voucherPreviewByPlan[state.selectedPlanId] || null
+          : null;
+        const activeVoucher = selectedVoucher || state.checkedVoucher || voucherPreviewEntries[0]?.[1] || null;
+
+        if (voucherAppliedBadge) {
+          if (hasVoucherPreview && activeVoucher) {
+            const appliedCount = voucherPreviewEntries.length;
+            const selectedDiscountIdr = Math.max(0, Number(selectedVoucher?.discountIdr || 0));
+            const selectedFinalAmountIdr = Math.max(0, Number(selectedVoucher?.finalAmountIdr || 0));
+            voucherAppliedBadge.hidden = false;
+            if (selectedVoucher) {
+              voucherAppliedBadge.textContent = `${activeVoucher.code} terkunci | Berlaku di ${appliedCount} paket | Paket terpilih hemat ${moneyIdr.format(selectedDiscountIdr)} | Total bayar ${moneyIdr.format(selectedFinalAmountIdr)}`;
+            } else {
+              voucherAppliedBadge.textContent = `${activeVoucher.code} terkunci | Berlaku di ${appliedCount} paket`;
+            }
+          } else {
+            voucherAppliedBadge.hidden = true;
+            voucherAppliedBadge.textContent = "";
+          }
+        }
+
+        if (!state.plans.length) {
+          plansContainer.innerHTML = '<div class="empty">Belum tersedia paket aktif.</div>';
+          checkoutBtn.disabled = true;
+          return;
+        }
+
+        state.plans.forEach((plan) => {
+          const card = document.createElement("div");
+          card.className = "plan"
+            + (state.selectedPlanId === plan.id ? " active" : "")
+            + (state.checkoutLock.locked ? " locked" : "");
+
+          const cycleText =
+            Number(plan.billing_cycle_months) > 0
+              ? `${plan.billing_cycle_months} bulan`
+              : "Sekali bayar";
+
+          const rawPlanPrice = Number(plan.price_idr || 0);
+          const planVoucher = voucherPreviewByPlan[plan.id] || null;
+          const canShowVoucherPrice = Boolean(planVoucher);
+          const finalPlanPrice = canShowVoucherPrice
+            ? Number(planVoucher.finalAmountIdr)
+            : rawPlanPrice;
+          const discountIdr = canShowVoucherPrice
+            ? Math.max(0, Number(planVoucher.discountIdr || 0))
+            : 0;
+
+          const copy = getPlanConversionCopy(plan);
+          const pointsHtml = copy.points.map((point) => `<li>${point}</li>`).join("");
+
+          const priceHtml = canShowVoucherPrice
+            ? `
+              <div class="price">${moneyIdr.format(finalPlanPrice)}</div>
+              <div class="meta" style="margin-top: -4px; color: #9dc4e8; text-decoration: line-through;">${moneyIdr.format(rawPlanPrice)}</div>
+              <div class="meta" style="margin-top: -2px; color: #5de7b6;">Voucher aktif ${planVoucher.code}: hemat ${moneyIdr.format(discountIdr)}</div>
+            `
+            : `<div class="price">${moneyIdr.format(rawPlanPrice)}</div>`;
+
+          card.innerHTML = `
+            <div class="plan-kicker">${copy.kicker}</div>
+            <h3>${plan.name}</h3>
+            ${priceHtml}
+            <p class="plan-usp">${copy.usp}</p>
+            <ul class="plan-points">${pointsHtml}</ul>
+            <div class="meta">Periode aktif: ${cycleText}</div>
+            <button class="btn btn-soft" type="button">${copy.cta}</button>
+          `;
+
+          const button = card.querySelector("button");
+          button.disabled = state.checkoutLock.locked;
+
+          button.addEventListener("click", () => {
+            if (state.checkoutLock.locked) {
+              log(state.checkoutLock.reason, "error");
+              return;
+            }
+
+            const previousPlanId = state.selectedPlanId;
+            state.selectedPlanId = plan.id;
+            if (previousPlanId !== plan.id && state.checkedVoucher) {
+              state.checkedVoucher = voucherPreviewByPlan[plan.id] || state.checkedVoucher;
+            }
+            renderPlans();
+            applyCheckoutAvailability();
+            log(`Paket terpilih: ${plan.name}`, "ok");
+          });
+
+          plansContainer.appendChild(card);
+        });
+
+        if (state.checkoutLock.locked) {
+          const note = document.createElement("div");
+          note.className = "lock-note";
+          note.textContent = state.checkoutLock.reason;
+          plansContainer.appendChild(note);
+        }
+
+        applyCheckoutAvailability();
+      };
+
+      const setMembershipFallback = (text) => {
+        membershipStatus.innerHTML = `<span class="empty">${text}</span>`;
+      };
+
+      const setPaymentFallback = (text) => {
+        latestPaymentStatus.innerHTML = `<span class="empty">${text}</span>`;
+      };
+
+      const renderStatus = (data) => {
+        state.membership = data?.membership || null;
+        state.checkoutLock = getCheckoutLockState(state.membership);
+
+        if (!data?.membership) {
+          setMembershipFallback("Belum ada keanggotaan aktif. Pilih paket untuk mulai mendapatkan akses premium.");
+        } else {
+          const plan = data.membership.plan;
+          membershipStatus.innerHTML = `
+            <div>Status: ${badgeHtml(data.membership.status)}</div>
+            <div>Paket: ${plan?.name || "-"}</div>
+            <div>Mulai: ${formatDateTime(data.membership.starts_at)}</div>
+            <div>Berakhir: ${formatMembershipEnd(data.membership)}</div>
+          `;
+
+          // Informasi lock H-3 ditampilkan sekali di blok lock-note agar tidak duplikat.
+        }
+
+        const payment = Array.isArray(data?.payments) && data.payments.length ? data.payments[0] : null;
+        if (!payment) {
+          setPaymentFallback("Belum ada transaksi pembayaran yang tercatat.");
+        } else {
+          latestPaymentStatus.innerHTML = `
+            <div>Status: ${badgeHtml(payment.status)}</div>
+            <div>Metode: ${payment.payment_method || "-"}</div>
+            <div>Kanal: ${payment.payment_channel || "-"}</div>
+            <div>Waktu settlement: ${formatDateTime(payment.settlement_time)}</div>
+          `;
+        }
+
+        invoiceRows.innerHTML = "";
+        const invoices = Array.isArray(data?.invoices) ? data.invoices : [];
+
+        if (!invoices.length) {
+          const row = document.createElement("tr");
+          row.innerHTML = '<td colspan="5" class="empty">Belum tersedia invoice.</td>';
+          invoiceRows.appendChild(row);
+          renderPlans();
+          return;
+        }
+
+        invoices.forEach((invoice) => {
+          const row = document.createElement("tr");
+          const snapToken = invoice.raw_payload?.midtrans?.token;
+          const statusVal = (invoice.status || "").toLowerCase();
+
+          let actionHtml = "-";
+          if ((statusVal === "open" || statusVal === "pending") && snapToken) {
+            actionHtml = `<button class="btn btn-primary" style="padding: 4px 8px; font-size: 12px; height: auto; min-height: 28px;" onclick="window.resumeInvoicePayment('${snapToken}', '${invoice.external_order_id}')">Bayar</button>
+            <button class="btn btn-soft" style="padding: 4px 8px; font-size: 12px; height: auto; min-height: 28px; margin-left: 4px;" onclick="window.verifyPayment('${invoice.external_order_id}')">Cek Status</button>`;
+          }
+
+          row.innerHTML = `
+            <td>${invoice.external_order_id}</td>
+            <td>${badgeHtml(invoice.status)}</td>
+            <td>${moneyIdr.format(Number(invoice.amount_idr || 0))}</td>
+            <td>${formatDateTime(invoice.paid_at)}</td>
+            <td>${actionHtml}</td>
+          `;
+          invoiceRows.appendChild(row);
+        });
+
+        renderPlans();
+      };
+
+      const refreshStatus = async () => {
+        if (!state.session) {
+          state.membership = null;
+          state.checkoutLock = { locked: false, reason: "" };
+          setMembershipFallback("Silakan masuk untuk melihat status keanggotaan.");
+          setPaymentFallback("Silakan masuk untuk melihat status pembayaran.");
+          invoiceRows.innerHTML = '<tr><td colspan="5" class="empty">Silakan masuk untuk melihat invoice.</td></tr>';
+          renderPlans();
+          return;
+        }
+
+        const data = await apiFetch("/api/subscription/status");
+        renderStatus(data);
+        log("Status keanggotaan dan invoice berhasil diperbarui.", "ok");
+      };
+
+      window.verifyPayment = async (orderOrNotification) => {
+        try {
+          const isNotificationObject =
+            orderOrNotification &&
+            typeof orderOrNotification === "object" &&
+            typeof orderOrNotification.order_id === "string";
+
+          const orderId = isNotificationObject
+            ? orderOrNotification.order_id
+            : String(orderOrNotification || "").trim();
+
+          if (!orderId) {
+            log("Order ID tidak ditemukan untuk proses verifikasi.", "error");
+            return;
+          }
+
+          log(`Memverifikasi status transaksi: ${orderId}...`, "info");
+
+          const payload = isNotificationObject
+            ? {notification: orderOrNotification, order_id: orderId}
+            : {order_id: orderId};
+
+          await apiFetch("/api/subscription/verify-payment", {
+            method: "POST",
+            body: JSON.stringify(payload),
+          });
+
+          log("Verifikasi transaksi selesai.", "ok");
+        } catch (err) {
+          log("Verifikasi pembayaran gagal: " + err.message, "error");
+        } finally {
+          await refreshStatus();
+        }
+      };
+
+      window.resumeInvoicePayment = (snapToken, orderId) => {
+        if (!state.midtransSnapReady || !window.snap) {
+          log("Midtrans Snap belum siap. Silakan perbarui halaman.", "error");
+          return;
+        }
+
+        window.snap.pay(snapToken, {
+          onSuccess: async (res) => {
+            log("Pembayaran berhasil diselesaikan.", "ok");
+            await window.verifyPayment(res?.order_id ? res : {order_id: orderId});
+          },
+          onPending: async (res) => {
+            log("Pembayaran masih menunggu penyelesaian.", "ok");
+            await window.verifyPayment(res?.order_id ? res : {order_id: orderId});
+          },
+          onError: async (res) => {
+            log(`Midtrans error: ${JSON.stringify(res)}`, "error");
+            await window.verifyPayment(res?.order_id ? res : {order_id: orderId});
+          },
+          onClose: async () => {
+            log("Jendela Midtrans ditutup sebelum pembayaran selesai.", "error");
+            await window.verifyPayment(orderId);
+          },
+        });
+      };
+
+      const loadPlans = async () => {
+        const data = await apiFetch("/api/subscription/plans");
+        state.plans = Array.isArray(data?.plans) ? data.plans : [];
+        const activePlanIds = new Set(state.plans.map((plan) => plan.id));
+
+        if (state.voucherPreviewByPlan && typeof state.voucherPreviewByPlan === "object") {
+          const filteredPreview = Object.fromEntries(
+            Object.entries(state.voucherPreviewByPlan).filter(([planId]) => activePlanIds.has(planId)),
+          );
+          state.voucherPreviewByPlan = filteredPreview;
+          if (Object.keys(filteredPreview).length === 0) {
+            state.checkedVoucher = null;
+          }
+        }
+
+        if (state.selectedPlanId && !activePlanIds.has(state.selectedPlanId)) {
+          state.selectedPlanId = "";
+        }
+
+        if (!state.selectedPlanId && state.plans.length > 0) {
+          state.selectedPlanId = state.plans[0].id;
+        }
+
+        renderPlans();
+      };
+
+      const syncSessionUi = (session) => {
+        state.session = session;
+
+        if (session?.user?.email) {
+          const fullName = session.user.user_metadata?.full_name || "-";
+          authCardTitle.textContent = "Profil Akun";
+          authCardMeta.textContent = "Akun aktif. Anda siap melanjutkan checkout dan mengamankan akses premium.";
+          authToolbar.style.display = "none";
+          authForm.style.display = "none";
+
+          userBox.querySelector("strong").textContent = "Akun Aktif";
+          userEmail.textContent = session.user.email;
+          profileDetails.innerHTML = `
+            <div>Nama: ${fullName}</div>
+            <div>User ID: ${session.user.id || "-"}</div>
+            <div>Email terverifikasi: ${session.user.email_confirmed_at ? "Ya" : "Belum"}</div>
+          `;
+          logoutBtn.disabled = false;
+        } else {
+          authCardTitle.textContent = "Akses Akun";
+          authCardMeta.textContent = "Silahkan Login atau Registrasi terlebih dahulu untuk mengaktifkan akses dan menjalankan program";
+          authToolbar.style.display = "flex";
+          authForm.style.display = "grid";
+
+          userBox.querySelector("strong").textContent = "Belum masuk";
+          userEmail.textContent = "Silakan masuk untuk membuka paket dan memulai checkout.";
+          profileDetails.innerHTML = "";
+          logoutBtn.disabled = true;
+        }
+
+        if (!state.session) {
+          state.membership = null;
+          state.checkoutLock = { locked: false, reason: "" };
+          clearVoucherPreview();
+        }
+
+        applyCheckoutAvailability();
+      };
+
+      const init = async () => {
+        const config = await apiFetch("/api/subscription/config");
+        const redirectReason = new URLSearchParams(window.location.search).get("reason");
+
+        state.midtransMode = config.midtransMode === "production" ? "production" : "sandbox";
+        state.midtransClientKey = typeof config.midtransClientKey === "string" ? config.midtransClientKey : "";
+
+        if (redirectReason === "membership") {
+          log("Akses ke halaman utama memerlukan keanggotaan aktif.", "error");
+        }
+
+        if (redirectReason === "login") {
+          log("Silakan masuk untuk mengakses halaman utama.", "error");
+        }
+
+        try {
+          await loadMidtransSnapScript();
+          if (state.midtransSnapReady) {
+            log("Midtrans Snap siap digunakan.", "ok");
+          }
+        } catch (error) {
+          state.midtransSnapReady = false;
+          log(error.message || String(error), "error");
+        }
+
+        state.supabase = createClient(config.supabaseUrl, config.supabaseAnonKey, {
+          auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: true,
+          },
+        });
+
+        const { data: sessionData } = await state.supabase.auth.getSession();
+        syncSessionUi(sessionData.session || null);
+        await syncServerAccessGateSession(sessionData.session || null);
+
+        state.supabase.auth.onAuthStateChange((_event, session) => {
+          syncSessionUi(session || null);
+          syncServerAccessGateSession(session || null).catch((error) => {
+            log(error.message || String(error), "error");
+          });
+          refreshStatus().catch((error) => log(error.message, "error"));
+        });
+
+        await loadPlans();
+        await refreshStatus();
+        log("Portal keanggotaan siap digunakan.", "ok");
+      };
+
+      modeLoginBtn.addEventListener("click", () => setMode("login"));
+      modeSignupBtn.addEventListener("click", () => setMode("signup"));
+
+      authForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        if (!state.supabase) {
+          log("Klien Supabase belum siap.", "error");
+          return;
+        }
+
+        const email = emailInput.value.trim().toLowerCase();
+        const password = passwordInput.value;
+
+        if (!email || !password) {
+          log("Email dan kata sandi wajib diisi.", "error");
+          return;
+        }
+
+        authSubmitBtn.disabled = true;
+
+        try {
+          if (state.mode === "signup") {
+            const fullName = fullNameInput.value.trim();
+            if (!fullName) {
+              throw new Error("Nama lengkap wajib diisi untuk registrasi.");
+            }
+
+            const { data: signUpData, error: signUpError } = await state.supabase.auth.signUp({
+              email,
+              password,
+              options: {
+                data: {
+                  full_name: fullName,
+                },
+              },
+            });
+
+            if (signUpError) {
+              throw signUpError;
+            }
+
+            if (signUpData?.session) {
+              syncSessionUi(signUpData.session);
+              await syncServerAccessGateSession(signUpData.session);
+              log("Registrasi berhasil dan akun telah masuk secara otomatis.", "ok");
+            } else {
+              const { data, error } = await signInWithRetry({
+                email,
+                password,
+                maxAttempts: 4,
+              });
+
+              if (!error && data?.session) {
+                syncSessionUi(data.session);
+                await syncServerAccessGateSession(data.session);
+                log("Registrasi berhasil dan akun telah masuk secara otomatis.", "ok");
+              } else {
+                setMode("login");
+                log("Registrasi berhasil. Silakan cek email verifikasi lalu login.", "ok");
+              }
+            }
+
+          } else {
+            const { data, error } = await signInWithRetry({
+              email,
+              password,
+              maxAttempts: 2,
+            });
+
+            if (error) {
+              throw error;
+            }
+
+            syncSessionUi(data.session || null);
+            await syncServerAccessGateSession(data.session || null);
+            log("Masuk berhasil.", "ok");
+          }
+
+          await refreshStatus();
+        } catch (error) {
+          const message = error?.message || String(error);
+          if (/invalid login credentials/i.test(message)) {
+            if (state.mode === "signup") {
+              log("Akun berhasil dibuat, tetapi proses masuk otomatis gagal. Silakan masuk manual dengan email dan kata sandi yang sama.", "error");
+            } else {
+              log("Email atau kata sandi tidak sesuai. Pastikan kredensial Anda benar.", "error");
+            }
+          } else {
+            log(message, "error");
+          }
+        } finally {
+          authSubmitBtn.disabled = false;
+        }
+      });
+
+      logoutBtn.addEventListener("click", async () => {
+        if (!state.supabase) return;
+
+        const { error } = await state.supabase.auth.signOut();
+        if (error) {
+          log(error.message, "error");
+          return;
+        }
+
+        syncSessionUi(null);
+        await syncServerAccessGateSession(null);
+        await refreshStatus();
+        log("Keluar akun berhasil.", "ok");
+      });
+
+      refreshBtn.addEventListener("click", async () => {
+        try {
+          await loadPlans();
+          await refreshStatus();
+        } catch (error) {
+          log(error.message || String(error), "error");
+        }
+      });
+
+      couponInput.addEventListener("input", () => {
+        const normalized = String(couponInput?.value || "").toUpperCase();
+        if (couponInput.value !== normalized) {
+          const start = couponInput.selectionStart;
+          const end = couponInput.selectionEnd;
+          couponInput.value = normalized;
+          if (start !== null && end !== null) {
+            couponInput.setSelectionRange(start, end);
+          }
+        }
+
+        const appliedCode = String(state.checkedVoucher?.code || "").toUpperCase();
+        if (appliedCode && normalized !== appliedCode) {
+          clearVoucherPreview();
+          renderPlans();
+        }
+      });
+
+      checkCouponBtn.addEventListener("click", () => {
+        checkCouponOrVoucher().catch((error) => {
+          log(error.message || String(error), "error");
+        });
+      });
+
+      checkoutBtn.addEventListener("click", async () => {
+        if (!state.session) {
+          log("Silakan masuk terlebih dahulu sebelum melakukan checkout.", "error");
+          return;
+        }
+
+        if (!state.selectedPlanId) {
+          log("Silakan pilih paket terlebih dahulu.", "error");
+          return;
+        }
+
+        checkoutBtn.disabled = true;
+        checkoutBtn.textContent = "Menyiapkan checkout...";
+
+        try {
+          const normalizedVoucherCode = String(couponInput?.value || "").trim().toUpperCase();
+          const result = await apiFetch("/api/subscription/checkout", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              planId: state.selectedPlanId,
+              voucherCode: normalizedVoucherCode || undefined,
+            }),
+          });
+
+          log(`Checkout berhasil dibuat. Order ID: ${result.orderId}`, "ok");
+
+          if (result?.voucher?.code) {
+            log(
+              `Voucher ${result.voucher.code} diterapkan. Potongan ${moneyIdr.format(Number(result.voucher.discountIdr || 0))}.`,
+              "ok",
+            );
+          }
+
+          if (result.token && state.midtransSnapReady && window.snap) {
+            window.snap.pay(result.token, {
+              onSuccess: async (res) => {
+                log("Pembayaran berhasil diselesaikan.", "ok");
+                await window.verifyPayment(res?.order_id ? res : {order_id: result.orderId});
+              },
+              onPending: async (res) => {
+                log("Pembayaran masih menunggu penyelesaian.", "ok");
+                await window.verifyPayment(res?.order_id ? res : {order_id: result.orderId});
+              },
+              onError: async (res) => {
+                log(`Midtrans error: ${JSON.stringify(res)}`, "error");
+                await window.verifyPayment(res?.order_id ? res : {order_id: result.orderId});
+              },
+              onClose: async () => {
+                log("Jendela Midtrans ditutup sebelum pembayaran selesai.", "error");
+                await window.verifyPayment(result.orderId);
+              },
+            });
+          } else if (result.redirectUrl) {
+            log("Mengarahkan ke halaman pembayaran Midtrans.", "ok");
+            window.location.assign(result.redirectUrl);
+          } else {
+            throw new Error("Checkout tidak mengembalikan token atau URL pengalihan Midtrans.");
+          }
+        } catch (error) {
+          log(error.message || String(error), "error");
+        } finally {
+          applyCheckoutAvailability();
+        }
+      });
+
+      setMode("login");
+      init().catch((error) => {
+        log(error.message || String(error), "error");
+      });
+    </script>
+  </body>
+</html>

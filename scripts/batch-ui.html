@@ -1,0 +1,1971 @@
+﻿<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dashboard Pemrosesan Batch</title>
+    <style>
+      :root {
+        --bg-0: #07101b;
+        --bg-1: #0c1a2d;
+        --bg-2: #11253f;
+        --panel: rgba(13, 28, 48, 0.86);
+        --panel-strong: rgba(10, 22, 38, 0.95);
+        --line: #284a72;
+        --line-soft: #1d3857;
+        --text: #e9f1ff;
+        --muted: #99abc6;
+        --accent: #2dd4bf;
+        --accent-soft: rgba(45, 212, 191, 0.2);
+        --focus: #7dd3fc;
+        --ok: #5de7b6;
+        --warn: #ffd08a;
+        --bad: #ff9d9d;
+        --info: #9bd2ff;
+        --radius: 16px;
+        --radius-sm: 12px;
+        --shadow-1: 0 14px 30px rgba(0, 0, 0, 0.33);
+        --fs-h1: clamp(1.7rem, 1.45rem + 1.1vw, 2.25rem);
+        --fs-section: clamp(1.05rem, 0.95rem + 0.35vw, 1.28rem);
+        --fs-body: 0.92rem;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: "Bahnschrift", "Trebuchet MS", "Segoe UI", sans-serif;
+        background:
+          radial-gradient(70% 60% at 85% 8%, rgba(45, 212, 191, 0.12), transparent 60%),
+          radial-gradient(55% 50% at 10% 0%, rgba(125, 211, 252, 0.12), transparent 70%),
+          linear-gradient(145deg, var(--bg-1), var(--bg-0) 62%);
+        letter-spacing: 0.1px;
+      }
+
+      .app {
+        max-width: 1380px;
+        margin: 0 auto;
+        padding: 26px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 20px;
+      }
+
+      .full {
+        grid-column: 1 / -1;
+      }
+
+      .hero-main {
+        grid-column: 1 / -1;
+        grid-row: 1;
+      }
+
+      .main-workspace {
+        grid-column: 1 / -1;
+        grid-row: 2;
+      }
+
+      .sidebar-history {
+        grid-column: 1 / -1;
+        grid-row: 3;
+        align-self: start;
+        display: flex;
+        flex-direction: column;
+        max-height: none;
+      }
+
+      .card {
+        position: relative;
+        background: linear-gradient(165deg, var(--panel), var(--panel-strong));
+        border: 1px solid var(--line-soft);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-1);
+        padding: 20px;
+        overflow: hidden;
+        animation: cardIn 440ms ease both;
+      }
+
+      .card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        border-radius: inherit;
+        background: linear-gradient(120deg, rgba(125, 211, 252, 0.1), transparent 34%);
+      }
+
+      .hero {
+        display: grid;
+        gap: 16px;
+      }
+
+      .hero-top {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(300px, 1fr);
+        gap: 16px;
+        align-items: start;
+        padding-bottom: 12px;
+        border-bottom: 1px solid rgba(82, 133, 185, 0.24);
+      }
+
+      .hero-top > .profile-card {
+        align-self: end;
+      }
+
+      .hero-left {
+        display: grid;
+        gap: 14px;
+        align-content: start;
+      }
+
+      .hero-intro {
+        display: grid;
+        gap: 8px;
+      }
+
+      .hero-content {
+        display: flex;
+        justify-content: flex-end;
+        align-items: flex-start;
+      }
+
+      .eyebrow {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+        color: var(--info);
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+      }
+
+      h1 {
+        margin-top: 8px;
+        font-size: var(--fs-h1);
+        line-height: 1.18;
+      }
+
+      .subtitle {
+        margin: 0;
+        color: var(--muted);
+        font-size: var(--fs-body);
+        line-height: 1.58;
+        max-width: 70ch;
+      }
+
+      .brand-spotlight {
+        margin-top: 0;
+        padding: 16px;
+        border: 1px solid rgba(45, 212, 191, 0.35);
+        border-radius: 14px;
+        background: linear-gradient(135deg, rgba(8, 32, 33, 0.74), rgba(10, 24, 40, 0.82));
+        display: flex;
+        flex-direction: column;
+        box-shadow: inset 0 1px 0 rgba(164, 229, 255, 0.08);
+        max-width: none;
+      }
+
+      .brand-name {
+        margin: 0;
+        color: #98f5e2;
+        font-size: 15px;
+        font-weight: 800;
+        letter-spacing: 0.5px;
+      }
+
+      .brand-copy {
+        margin: 10px 0 0;
+        color: #c4d7ef;
+        font-size: 13.5px;
+        line-height: 1.55;
+        max-width: 58ch;
+      }
+
+      .brand-link {
+        display: inline-flex;
+        align-items: center;
+        margin-top: 10px;
+        color: #bce7ff;
+        font-size: 12.5px;
+        font-weight: 700;
+        text-decoration: none;
+        border-bottom: 1px dashed rgba(188, 231, 255, 0.6);
+      }
+
+      .brand-link:hover {
+        color: #d8f0ff;
+        border-bottom-color: rgba(216, 240, 255, 0.9);
+      }
+
+      .hero-side {
+        display: grid;
+        gap: 12px;
+        align-content: start;
+      }
+
+      .profile-card {
+        background: linear-gradient(165deg, rgba(6, 15, 27, 0.84), rgba(7, 18, 31, 0.74));
+        border: 1px solid rgba(60, 130, 190, 0.45);
+        border-radius: var(--radius-sm);
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        box-shadow: inset 0 1px 0 rgba(148, 208, 255, 0.08);
+      }
+
+      .profile-title {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.8px;
+        color: #d8ecff;
+        text-transform: uppercase;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(67, 113, 161, 0.35);
+      }
+
+      .profile-grid {
+        display: grid;
+        gap: 0;
+      }
+
+      .profile-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        font-size: 12.5px;
+        padding: 8px 0;
+        border-bottom: 1px dashed rgba(61, 99, 141, 0.42);
+      }
+
+      .profile-row:last-child {
+        border-bottom: 0;
+      }
+
+      .profile-label {
+        color: var(--muted);
+        letter-spacing: 0.2px;
+      }
+
+      .profile-value {
+        color: #edf5ff;
+        font-weight: 600;
+        text-align: right;
+        max-width: 66%;
+        word-break: break-word;
+      }
+
+      .profile-link-btn {
+        width: 100%;
+        justify-content: center;
+        margin-top: 4px;
+        min-height: 44px;
+        border: 1px solid rgba(121, 189, 246, 0.55);
+        background: linear-gradient(135deg, rgba(75, 132, 186, 0.3), rgba(45, 212, 191, 0.22));
+        color: #dff2ff;
+        font-size: 12.5px;
+        letter-spacing: 0.35px;
+      }
+
+      .profile-link-btn:hover:not(:disabled) {
+        border-color: rgba(146, 211, 255, 0.86);
+        color: #f2f9ff;
+      }
+
+      .hero-metrics {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        align-content: start;
+        align-items: start;
+        grid-auto-rows: minmax(0, auto);
+      }
+
+      .metric {
+        background: rgba(7, 17, 30, 0.55);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        padding: 12px;
+        min-height: 90px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        justify-content: flex-start;
+        box-shadow: inset 0 1px 0 rgba(151, 205, 255, 0.07);
+      }
+
+      .metric-value {
+        font-size: 25px;
+        font-weight: 700;
+        color: var(--text);
+        letter-spacing: 0.2px;
+        line-height: 1.1;
+      }
+
+      .metric-label {
+        color: var(--muted);
+        font-size: 11.5px;
+        letter-spacing: 0.45px;
+        text-transform: uppercase;
+      }
+
+      .metric-value.is-ok {
+        color: var(--ok);
+      }
+
+      .metric-value.is-bad {
+        color: var(--bad);
+      }
+
+      .metric-value.is-info {
+        color: var(--info);
+      }
+
+      .metric-value.is-warn {
+        color: var(--warn);
+      }
+
+      .section-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: 16px;
+      }
+
+      .section-title {
+        font-size: var(--fs-section);
+        letter-spacing: 0.3px;
+      }
+
+      .section-note {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12.5px;
+        line-height: 1.45;
+      }
+
+      .editor-grid {
+        display: grid;
+        grid-template-columns: 1.4fr 1fr;
+        gap: 14px;
+      }
+
+      label {
+        display: block;
+        margin: 0 0 7px;
+        color: var(--info);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+      }
+
+      textarea {
+        width: 100%;
+        color: var(--text);
+        background: linear-gradient(165deg, rgba(7, 17, 30, 0.9), rgba(6, 14, 25, 0.95));
+        border: 1px solid rgba(63, 102, 139, 0.42);
+        border-radius: 11px;
+        padding: 12px 12px;
+        font: inherit;
+      }
+
+      textarea {
+        min-height: 260px;
+        resize: vertical;
+        font-family: "Consolas", "Cascadia Mono", monospace;
+        line-height: 1.45;
+        overflow: auto;
+        scrollbar-gutter: stable;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(91, 152, 212, 0.82) rgba(8, 22, 39, 0.85);
+      }
+
+      textarea::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+
+      textarea::-webkit-scrollbar-track {
+        background: rgba(8, 22, 39, 0.85);
+        border-radius: 10px;
+      }
+
+      textarea::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(125, 211, 252, 0.84), rgba(65, 151, 209, 0.88));
+        border-radius: 10px;
+        border: 2px solid rgba(8, 22, 39, 0.85);
+      }
+
+      textarea::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(180deg, rgba(153, 224, 255, 0.95), rgba(84, 170, 226, 0.95));
+      }
+
+      #root-code {
+        min-height: 260px;
+      }
+
+      .custom-select {
+        position: relative;
+      }
+
+      .custom-select-trigger {
+        width: 100%;
+        min-height: 44px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        padding: 10px 42px 10px 12px;
+        background: linear-gradient(180deg, rgba(7, 19, 32, 0.95), rgba(5, 14, 26, 0.98));
+        color: #e9f1ff;
+        font: inherit;
+        font-weight: 700;
+        letter-spacing: 0.1px;
+        text-align: left;
+        cursor: pointer;
+        transition: border-color 140ms ease, box-shadow 140ms ease, filter 140ms ease;
+      }
+
+      .custom-select-trigger:hover {
+        border-color: #4f83b7;
+        filter: brightness(1.03);
+      }
+
+      .custom-select-chevron {
+        position: absolute;
+        right: 14px;
+        top: 50%;
+        width: 8px;
+        height: 8px;
+        border-right: 2px solid #9bd2ff;
+        border-bottom: 2px solid #9bd2ff;
+        transform: translateY(-62%) rotate(45deg);
+        pointer-events: none;
+        transition: transform 180ms ease;
+      }
+
+      .custom-select.is-open .custom-select-chevron {
+        transform: translateY(-38%) rotate(225deg);
+      }
+
+      .custom-select-menu {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        right: 0;
+        z-index: 22;
+        background: linear-gradient(180deg, rgba(10, 24, 42, 0.98), rgba(8, 20, 34, 0.98));
+        border: 1px solid #3f668f;
+        border-radius: 11px;
+        box-shadow: 0 14px 30px rgba(1, 6, 14, 0.58);
+        padding: 6px;
+        display: grid;
+        gap: 4px;
+        max-height: 210px;
+        overflow: auto;
+      }
+
+      .custom-select-menu[hidden] {
+        display: none;
+      }
+
+      .custom-select-option {
+        border: 1px solid transparent;
+        border-radius: 9px;
+        background: transparent;
+        color: #dbeaff;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        text-align: left;
+        padding: 10px 10px;
+        cursor: pointer;
+      }
+
+      .custom-select-option:hover {
+        background: rgba(80, 137, 189, 0.2);
+        color: #f2f8ff;
+      }
+
+      .custom-select-option.is-active {
+        background: rgba(45, 212, 191, 0.2);
+        border-color: rgba(45, 212, 191, 0.55);
+        color: #b8f8e8;
+      }
+
+      textarea:focus-visible,
+      .custom-select-trigger:focus-visible,
+      .custom-select-option:focus-visible,
+      button:focus-visible {
+        outline: none;
+        border-color: #b4e4ff;
+        box-shadow: 0 0 0 2px rgba(7, 16, 27, 0.95), 0 0 0 4px rgba(125, 211, 252, 0.65);
+      }
+
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 12px;
+      }
+
+      .btn {
+        border: 1px solid transparent;
+        border-radius: 11px;
+        min-height: 42px;
+        padding: 10px 14px;
+        font-size: 12.5px;
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: 0.2px;
+        cursor: pointer;
+        transition: transform 140ms ease, filter 140ms ease, border-color 140ms ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+      }
+
+      .btn:hover:not(:disabled) {
+        transform: translateY(-1px);
+        filter: brightness(1.05);
+      }
+
+      .btn:disabled {
+        opacity: 0.52;
+        cursor: not-allowed;
+      }
+
+      .btn-primary {
+        background: linear-gradient(120deg, #1eb9a4, #3dd7c3);
+        color: #052019;
+      }
+
+      .btn-accent {
+        background: linear-gradient(120deg, #5bbdff, #82d3ff);
+        color: #051c32;
+      }
+
+      .btn-secondary {
+        background: #b8c8e2;
+        color: #0b223b;
+      }
+
+      .btn-danger {
+        background: linear-gradient(120deg, #ff9898, #ffb5aa);
+        color: #3b0a0a;
+      }
+
+      .status {
+        margin-top: 10px;
+        border-radius: 11px;
+        border: 1px solid transparent;
+        background: rgba(6, 16, 28, 0.96);
+        padding: 10px 12px;
+        color: #c6d6ee;
+        font-size: 13px;
+        line-height: 1.42;
+        font-weight: 600;
+      }
+
+      .status-empty {
+        display: none;
+      }
+
+      .status-msg-success {
+        background: rgba(11, 47, 40, 0.92);
+        border-color: rgba(93, 231, 182, 0.75);
+        color: #8ff3d1;
+      }
+
+      .status-msg-error {
+        background: rgba(68, 25, 31, 0.92);
+        border-color: rgba(255, 157, 157, 0.8);
+        color: #ffc0c0;
+      }
+
+      .status-msg-info {
+        background: rgba(17, 40, 63, 0.92);
+        border-color: rgba(155, 210, 255, 0.72);
+        color: #c6e8ff;
+      }
+
+      .control-shell {
+        margin-top: 18px;
+        padding-top: 14px;
+        border-top: 1px solid rgba(125, 211, 252, 0.12);
+        background: linear-gradient(180deg, rgba(11, 26, 44, 0.22), rgba(11, 26, 44, 0));
+      }
+
+      .control-grid {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+      }
+
+      .control-grid > .panel:first-child {
+        flex: 1.2 1 0;
+        min-width: 0;
+      }
+
+      .panel {
+        position: relative;
+        background: linear-gradient(165deg, rgba(8, 18, 31, 0.88), rgba(7, 16, 28, 0.96));
+        border: 1px solid rgba(63, 102, 139, 0.26);
+        border-radius: var(--radius-sm);
+        padding: 14px;
+      }
+
+      .panel-title {
+        font-size: 17px;
+        letter-spacing: 0.2px;
+        line-height: 1.3;
+      }
+
+      .panel-subtitle {
+        margin: 7px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .logs-wrap {
+        margin-top: 12px;
+      }
+
+      .panel-label {
+        margin-bottom: 8px;
+        color: var(--info);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+      }
+
+      .logs {
+        background: rgba(5, 12, 22, 0.92);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        min-height: 320px;
+        max-height: 500px;
+        overflow: auto;
+        padding: 11px;
+        color: #d9e6fb;
+        white-space: pre-wrap;
+        font-size: 12px;
+        line-height: 1.42;
+        font-family: "Consolas", "Cascadia Mono", monospace;
+      }
+
+      .logs,
+      .queue-list,
+      .history-table-wrap,
+      .custom-select-menu {
+        scrollbar-width: thin;
+        scrollbar-color: #6dbdf6 #0d2238;
+      }
+
+      .logs::-webkit-scrollbar,
+      .queue-list::-webkit-scrollbar,
+      .history-table-wrap::-webkit-scrollbar,
+      .custom-select-menu::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+
+      .logs::-webkit-scrollbar-track,
+      .queue-list::-webkit-scrollbar-track,
+      .history-table-wrap::-webkit-scrollbar-track,
+      .custom-select-menu::-webkit-scrollbar-track {
+        background: rgba(7, 19, 32, 0.9);
+        border-radius: 99px;
+      }
+
+      .logs::-webkit-scrollbar-thumb,
+      .queue-list::-webkit-scrollbar-thumb,
+      .history-table-wrap::-webkit-scrollbar-thumb,
+      .custom-select-menu::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, #7fc7ff, #4e9ddd);
+        border-radius: 99px;
+        border: 2px solid rgba(7, 19, 32, 0.92);
+      }
+
+      .logs::-webkit-scrollbar-thumb:hover,
+      .queue-list::-webkit-scrollbar-thumb:hover,
+      .history-table-wrap::-webkit-scrollbar-thumb:hover,
+      .custom-select-menu::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(180deg, #9ed8ff, #66afe8);
+      }
+
+      #project-queue-container {
+        flex: 1 1 0;
+        align-self: flex-start;
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+        min-height: 540px;
+        height: 540px;
+        max-height: 540px;
+        overflow: hidden;
+      }
+
+      .queue-list {
+        margin-top: 12px;
+        min-height: 0;
+        height: 100%;
+        overflow-y: auto;
+        padding-right: 4px;
+        display: grid;
+        align-content: start;
+        gap: 8px;
+      }
+
+      .queue-empty {
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+        padding: 14px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .queue-item {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: rgba(8, 16, 29, 0.85);
+        padding: 10px;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        animation: queueIn 240ms ease both;
+      }
+
+      .queue-item-main {
+        min-width: 0;
+      }
+
+      .queue-item-title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      .queue-item-meta {
+        margin: 5px 0 0;
+        font-size: 12px;
+        color: var(--muted);
+        word-break: break-word;
+      }
+
+      .queue-item-error {
+        margin-top: 5px;
+        font-size: 12px;
+        color: #ffc0c0;
+        line-height: 1.45;
+      }
+
+      .queue-item-state {
+        align-self: center;
+        white-space: nowrap;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .queue-state-waiting {
+        color: var(--muted);
+      }
+
+      .queue-state-progress {
+        color: var(--info);
+      }
+
+      .queue-state-retry {
+        color: #ffdfad;
+      }
+
+      .queue-state-success {
+        color: var(--ok);
+      }
+
+      .queue-state-failed {
+        color: var(--bad);
+      }
+
+      .history-table-wrap {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: auto;
+        background: rgba(5, 12, 22, 0.9);
+      }
+
+      .sidebar-history .history-table-wrap {
+        flex: 1 1 auto;
+        min-height: 300px;
+        max-height: 560px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+
+      thead {
+        background: rgba(18, 39, 63, 0.9);
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 9px;
+        border-bottom: 1px solid rgba(40, 74, 114, 0.5);
+        white-space: nowrap;
+      }
+
+      .status-chip {
+        display: inline-block;
+        padding: 4px 9px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .status-running {
+        background: rgba(155, 210, 255, 0.28);
+        color: #cdeaff;
+      }
+
+      .status-success {
+        background: rgba(93, 231, 182, 0.28);
+        color: #a4f7da;
+      }
+
+      .status-failed {
+        background: rgba(255, 157, 157, 0.3);
+        color: #ffd1d1;
+      }
+
+      .status-stopped {
+        background: rgba(255, 208, 138, 0.3);
+        color: #ffe2b9;
+      }
+
+      .status.ok {
+        border-color: rgba(93, 231, 182, 0.45);
+        color: var(--ok);
+      }
+
+      .status.bad {
+        border-color: rgba(255, 157, 157, 0.45);
+        color: var(--bad);
+      }
+
+      .card:nth-of-type(1) {
+        animation-delay: 40ms;
+      }
+
+      .card:nth-of-type(2) {
+        animation-delay: 100ms;
+      }
+
+      .card:nth-of-type(3) {
+        animation-delay: 180ms;
+      }
+
+      .card:nth-of-type(4) {
+        animation-delay: 240ms;
+      }
+
+      @keyframes cardIn {
+        from {
+          opacity: 0;
+          transform: translateY(12px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes queueIn {
+        from {
+          opacity: 0;
+          transform: translateY(5px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 1120px) {
+        .app {
+          padding: 22px;
+          gap: 16px;
+        }
+
+        .hero-main,
+        .main-workspace,
+        .sidebar-history {
+          grid-column: 1 / -1;
+          grid-row: auto;
+        }
+
+        .sidebar-history .history-table-wrap {
+          min-height: 0;
+          max-height: 480px;
+        }
+
+        .card {
+          padding: 18px;
+        }
+
+        .hero-top {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-content {
+          justify-content: flex-start;
+        }
+
+        .brand-spotlight {
+          min-height: auto;
+        }
+
+        .hero-metrics {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          width: 100%;
+        }
+
+        .editor-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .section-head {
+          margin-bottom: 12px;
+        }
+      }
+
+      @media (max-width: 980px) {
+        .app {
+          grid-template-columns: 1fr;
+          padding: 16px;
+          gap: 14px;
+        }
+
+        .card {
+          padding: 16px;
+        }
+
+        .control-grid {
+          flex-direction: column;
+        }
+
+        .control-grid > .panel:first-child {
+          width: 100%;
+          flex: 1 1 auto;
+        }
+
+        #project-queue-container {
+          width: 100%;
+          min-height: 430px;
+          height: 430px;
+          max-height: 430px;
+        }
+
+        h1 {
+          font-size: clamp(1.5rem, 1.35rem + 0.9vw, 1.95rem);
+        }
+
+        .section-title {
+          font-size: clamp(1rem, 0.92rem + 0.5vw, 1.2rem);
+        }
+
+        .row {
+          gap: 10px;
+        }
+
+        .row .btn {
+          flex: 1 1 200px;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .app {
+          padding: 12px;
+        }
+
+        .card {
+          padding: 14px;
+        }
+
+        .subtitle {
+          font-size: 13.5px;
+        }
+
+        .brand-spotlight {
+          margin-top: 12px;
+          padding: 12px;
+        }
+
+        .brand-copy {
+          font-size: 12.5px;
+        }
+
+        .metric-value {
+          font-size: 21px;
+        }
+
+        .hero-metrics {
+          grid-template-columns: 1fr;
+        }
+
+        .profile-row {
+          align-items: flex-start;
+          flex-direction: column;
+          gap: 3px;
+          padding: 7px 0;
+        }
+
+        .profile-value {
+          text-align: left;
+          max-width: 100%;
+        }
+
+        .logs {
+          min-height: 280px;
+        }
+
+        .row {
+          gap: 8px;
+        }
+
+        .row .btn {
+          flex: 1 1 100%;
+        }
+
+        #project-queue-container {
+          min-height: 400px;
+          height: 400px;
+          max-height: 400px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <section class="card hero hero-main">
+        <div class="hero-top">
+          <div class="hero-left">
+            <div class="hero-intro">
+              <p class="eyebrow">Pusat Operasional Render</p>
+              <h1>Dashboard Pemrosesan Batch</h1>
+              <p class="subtitle">
+                Kelola injeksi template, antrean render, serta pemantauan proses secara terpusat
+                dengan antarmuka operasional yang lebih profesional.
+              </p>
+            </div>
+
+            <div class="brand-spotlight">
+              <p class="brand-name">Narrapedia</p>
+              <p class="brand-copy">Narrapedia adalah marketplace produk digital dan layanan website/SEO untuk membantu bisnis tumbuh lebih cepat di era digital.</p>
+              <a class="brand-link" href="https://narrapedia.top/" target="_blank" rel="noopener noreferrer">Website resmi: narrapedia.top</a>
+            </div>
+          </div>
+
+          <article class="profile-card">
+            <p class="profile-title">Profil Membership</p>
+            <div class="profile-grid">
+              <div class="profile-row">
+                <span class="profile-label">Nama</span>
+                <span id="hero-profile-name" class="profile-value">-</span>
+              </div>
+              <div class="profile-row">
+                <span class="profile-label">Email</span>
+                <span id="hero-profile-email" class="profile-value">-</span>
+              </div>
+              <div class="profile-row">
+                <span class="profile-label">Membership</span>
+                <span id="hero-profile-membership" class="profile-value">Belum login</span>
+              </div>
+              <div class="profile-row">
+                <span class="profile-label">Aktif sampai</span>
+                <span id="hero-profile-expiry" class="profile-value">-</span>
+              </div>
+            </div>
+            <a class="btn btn-secondary profile-link-btn" href="http://localhost:3210/subscription">Kelola Membership</a>
+          </article>
+        </div>
+
+        <div class="hero-content">
+          <div class="hero-metrics">
+            <article class="metric">
+              <div id="metric-queue" class="metric-value">0</div>
+              <div class="metric-label">Proyek selesai</div>
+            </article>
+            <article class="metric">
+              <div id="metric-state" class="metric-value is-info">Siap</div>
+              <div class="metric-label">Kondisi sistem</div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="card main-workspace">
+        <div class="section-head">
+          <h2 class="section-title">Editor Template Desain</h2>
+        </div>
+
+        <div class="editor-grid">
+          <div>
+            <label for="template-code">Konten File Template (.tsx)</label>
+            <textarea id="template-code" placeholder="Tempelkan kode komponen template di area ini..."></textarea>
+          </div>
+          <div>
+            <label for="root-code">Konten File Root.tsx</label>
+            <textarea id="root-code" placeholder="Tempelkan kode integrasi Root.tsx di area ini..."></textarea>
+          </div>
+        </div>
+
+        <div class="row">
+          <button id="btn-save-template" class="btn btn-primary">Tambahkan ke Antrean</button>
+        </div>
+        <div id="save-template-status" class="status status-empty"></div>
+
+        <div class="control-shell">
+          <div class="control-grid">
+            <article class="panel" id="batch-control-card">
+              <h3 class="panel-title">Kontrol Eksekusi Batch</h3>
+              <p class="panel-subtitle">
+                Sistem dijalankan dalam mode render penuh dengan output satu proyek per proses.
+              </p>
+
+              <label for="output-resolution">Resolusi Output</label>
+              <div class="custom-select" id="resolution-select">
+                <button
+                  type="button"
+                  id="resolution-trigger"
+                  class="custom-select-trigger"
+                  aria-haspopup="listbox"
+                  aria-expanded="false"
+                  aria-controls="resolution-menu"
+                >
+                  <span id="resolution-label">1080p (1920x1080)</span>
+                  <span class="custom-select-chevron" aria-hidden="true"></span>
+                </button>
+                <div id="resolution-menu" class="custom-select-menu" role="listbox" aria-label="Resolusi Output" hidden>
+                  <button type="button" class="custom-select-option is-active" role="option" aria-selected="true" data-value="1080p">1080p (1920x1080)</button>
+                  <button type="button" class="custom-select-option" role="option" aria-selected="false" data-value="2k">2K (2560x1440)</button>
+                  <button type="button" class="custom-select-option" role="option" aria-selected="false" data-value="4k">4K (3840x2160)</button>
+                </div>
+                <select id="output-resolution" hidden tabindex="-1" aria-hidden="true">
+                  <option value="1080p" selected>1080p (1920x1080)</option>
+                  <option value="2k">2K (2560x1440)</option>
+                  <option value="4k">4K (3840x2160)</option>
+                </select>
+              </div>
+
+              <div class="row">
+                <button id="btn-run" class="btn btn-accent">Jalankan</button>
+                <button id="btn-stop" class="btn btn-danger" disabled>Hentikan</button>
+                <button id="btn-open-output" class="btn btn-secondary">Buka Folder Output</button>
+                <button id="btn-refresh" class="btn btn-secondary">Segarkan Status</button>
+              </div>
+
+              <div id="run-status" class="status status-msg-info">Sistem siap menjalankan proses batch.</div>
+
+              <div class="logs-wrap">
+                <div class="panel-label">Log Pemrosesan</div>
+                <div id="logs" class="logs"></div>
+              </div>
+            </article>
+
+            <article id="project-queue-container" class="panel">
+              <h3 class="panel-title">Antrean Proyek</h3>
+              <p class="panel-subtitle">
+                Setiap proyek pada antrean akan diproses berurutan melalui tombol Jalankan.
+              </p>
+
+              <div id="queue-list" class="queue-list">
+                <div class="queue-empty">Belum ada proyek dalam antrean.</div>
+              </div>
+
+              <div class="row" style="margin-top: 14px;">
+                <button id="btn-clear-queue" class="btn btn-secondary" disabled>Bersihkan Antrean</button>
+              </div>
+
+              <div id="queue-status" class="status status-empty"></div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="card sidebar-history">
+        <div class="section-head" style="margin-bottom: 10px;">
+          <h2 class="section-title">Riwayat Proses Render</h2>
+          <p id="history-summary" class="section-note">Direktori output: out/batch</p>
+        </div>
+
+        <div class="history-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>Nama File</th>
+                <th>Status</th>
+                <th>Mode</th>
+                <th>Dimulai</th>
+                <th>Selesai</th>
+              </tr>
+            </thead>
+            <tbody id="history-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const tplCodeInput = document.getElementById("template-code");
+      const rootCodeInput = document.getElementById("root-code");
+      const saveTplStatusEl = document.getElementById("save-template-status");
+      const btnSaveTemplate = document.getElementById("btn-save-template");
+      const DEFAULT_TEMPLATE_NAME = "BarLineChart.tsx";
+      const DEFAULT_COMPOSITION_ID = "BarLineChart";
+
+      const runStatusEl = document.getElementById("run-status");
+      const logsEl = document.getElementById("logs");
+      const resolutionEl = document.getElementById("output-resolution");
+      const resolutionSelectEl = document.getElementById("resolution-select");
+      const resolutionTriggerEl = document.getElementById("resolution-trigger");
+      const resolutionLabelEl = document.getElementById("resolution-label");
+      const resolutionMenuEl = document.getElementById("resolution-menu");
+      const resolutionOptionEls = Array.from(document.querySelectorAll(".custom-select-option"));
+      const runButton = document.getElementById("btn-run");
+      const stopButton = document.getElementById("btn-stop");
+      const historyBody = document.getElementById("history-body");
+      const historySummary = document.getElementById("history-summary");
+
+      const queueListEl = document.getElementById("queue-list");
+      const btnClearQueue = document.getElementById("btn-clear-queue");
+      const queueStatusEl = document.getElementById("queue-status");
+      const batchControlCardEl = document.getElementById("batch-control-card");
+      const queueContainerEl = document.getElementById("project-queue-container");
+      const metricQueueEl = document.getElementById("metric-queue");
+      const metricStateEl = document.getElementById("metric-state");
+      const heroProfileNameEl = document.getElementById("hero-profile-name");
+      const heroProfileEmailEl = document.getElementById("hero-profile-email");
+      const heroProfileMembershipEl = document.getElementById("hero-profile-membership");
+      const heroProfileExpiryEl = document.getElementById("hero-profile-expiry");
+
+      let projectQueue = [];
+      let isQueueRunning = false;
+      let stopQueueRequested = false;
+      let syncQueueHeightRaf = null;
+      const MAX_RENDER_RETRY = 3;
+      let completedProjectsTotal = 0;
+
+      const setMetricState = (label, tone = "info") => {
+        metricStateEl.textContent = label;
+        metricStateEl.className = "metric-value";
+
+        if (tone === "ok") {
+          metricStateEl.classList.add("is-ok");
+        } else if (tone === "bad") {
+          metricStateEl.classList.add("is-bad");
+        } else if (tone === "warn") {
+          metricStateEl.classList.add("is-warn");
+        } else {
+          metricStateEl.classList.add("is-info");
+        }
+      };
+
+      const setStatusMessage = (el, message, tone = "info") => {
+        el.textContent = message || "";
+
+        if (!message) {
+          el.className = "status status-empty";
+          return;
+        }
+
+        const nextClass = tone === "success"
+          ? "status status-msg-success"
+          : tone === "error"
+            ? "status status-msg-error"
+            : "status status-msg-info";
+
+        el.className = nextClass;
+      };
+
+      const syncResolutionUI = () => {
+        const selected = Array.from(resolutionEl.options).find((option) => option.value === resolutionEl.value);
+        resolutionLabelEl.textContent = selected ? selected.textContent : "-";
+
+        resolutionOptionEls.forEach((optionEl) => {
+          const isActive = optionEl.dataset.value === resolutionEl.value;
+          optionEl.classList.toggle("is-active", isActive);
+          optionEl.setAttribute("aria-selected", String(isActive));
+        });
+      };
+
+      const closeResolutionMenu = () => {
+        resolutionSelectEl.classList.remove("is-open");
+        resolutionTriggerEl.setAttribute("aria-expanded", "false");
+        resolutionMenuEl.hidden = true;
+      };
+
+      const openResolutionMenu = () => {
+        resolutionSelectEl.classList.add("is-open");
+        resolutionTriggerEl.setAttribute("aria-expanded", "true");
+        resolutionMenuEl.hidden = false;
+
+        const activeOption = resolutionMenuEl.querySelector(".custom-select-option.is-active") || resolutionOptionEls[0];
+        if (activeOption) {
+          activeOption.focus();
+        }
+      };
+
+      const toggleResolutionMenu = () => {
+        if (resolutionSelectEl.classList.contains("is-open")) {
+          closeResolutionMenu();
+          return;
+        }
+
+        openResolutionMenu();
+      };
+
+      const syncQueueHeightToBatchControl = () => {
+        if (!batchControlCardEl || !queueContainerEl) {
+          return;
+        }
+
+        if (window.innerWidth <= 980) {
+          queueContainerEl.style.minHeight = "430px";
+          queueContainerEl.style.height = "430px";
+          queueContainerEl.style.maxHeight = "430px";
+          return;
+        }
+
+        const measuredHeight = Math.ceil(batchControlCardEl.getBoundingClientRect().height);
+        if (measuredHeight <= 0) {
+          return;
+        }
+
+        const nextHeight = `${measuredHeight}px`;
+        queueContainerEl.style.minHeight = nextHeight;
+        queueContainerEl.style.height = nextHeight;
+        queueContainerEl.style.maxHeight = nextHeight;
+      };
+
+      const requestQueueHeightSync = () => {
+        if (syncQueueHeightRaf !== null) {
+          return;
+        }
+
+        syncQueueHeightRaf = requestAnimationFrame(() => {
+          syncQueueHeightRaf = null;
+          syncQueueHeightToBatchControl();
+        });
+      };
+
+      const updatePrimaryRunButton = () => {
+        if (isQueueRunning) {
+          runButton.textContent = "Sedang Diproses...";
+          runButton.disabled = true;
+        } else {
+          runButton.textContent = projectQueue.length > 0
+            ? `Jalankan Semua (${projectQueue.length})`
+            : "Jalankan";
+          runButton.disabled = false;
+        }
+
+        metricQueueEl.textContent = String(completedProjectsTotal);
+        metricQueueEl.className = `metric-value ${completedProjectsTotal > 0 ? "is-ok" : ""}`.trim();
+      };
+
+      const resolveQueueStateClass = (statusText) => {
+        if (!statusText) return "queue-state-waiting";
+
+        if (
+          statusText.startsWith("Menyiapkan")
+          || statusText.startsWith("Memproses")
+        ) {
+          return "queue-state-progress";
+        }
+
+        if (statusText.startsWith("Menunggu percobaan ulang")) {
+          return "queue-state-retry";
+        }
+
+        if (statusText === "Selesai") {
+          return "queue-state-success";
+        }
+
+        if (statusText === "Gagal" || statusText === "Kesalahan" || statusText === "Dihentikan") {
+          return "queue-state-failed";
+        }
+
+        return "queue-state-waiting";
+      };
+
+      const renderQueue = () => {
+        if (projectQueue.length === 0) {
+          queueListEl.innerHTML = '<div class="queue-empty">Belum ada proyek dalam antrean.</div>';
+          btnClearQueue.disabled = true;
+          updatePrimaryRunButton();
+          requestQueueHeightSync();
+          return;
+        }
+
+        btnClearQueue.disabled = isQueueRunning;
+        updatePrimaryRunButton();
+
+        queueListEl.innerHTML = projectQueue.map((q, index) => {
+          const autoFixLabel = q.autoFixApplied === true
+            ? "Diterapkan"
+            : q.autoFixApplied === false
+              ? "Tidak diperlukan"
+              : q.autoFixPreview === true
+                ? "Akan diterapkan"
+                : q.autoFixPreview === false
+                  ? "Tidak diperlukan"
+                  : "Belum dianalisis";
+
+          const stateClass = resolveQueueStateClass(q.status);
+
+          return `
+            <article class="queue-item">
+              <div class="queue-item-main">
+                <p class="queue-item-title">Proyek ${index + 1}</p>
+                <p class="queue-item-meta">Template: ${escapeHtml(q.templateName)} | Composition: ${escapeHtml(q.compId)}</p>
+                <p class="queue-item-meta">Penyesuaian otomatis: ${escapeHtml(autoFixLabel)}</p>
+                ${q.errorMessage ? `<p class="queue-item-error">${escapeHtml(q.errorMessage)}</p>` : ""}
+              </div>
+              <div id="q-status-${index}" class="queue-item-state ${stateClass}">
+                ${escapeHtml(q.status || "Dalam antrean")}
+              </div>
+            </article>
+          `;
+        }).join("");
+
+        requestQueueHeightSync();
+      };
+
+      const setQueueStatus = (message, ok = true) => {
+        setStatusMessage(queueStatusEl, message, ok ? "success" : "error");
+      };
+
+      const apiGet = async (url) => {
+        const res = await fetch(url, {cache: "no-store"});
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Permintaan gagal diproses");
+        }
+
+        return data;
+      };
+
+      const apiPost = async (url, body) => {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Permintaan gagal diproses");
+        }
+
+        return data;
+      };
+
+      const setSaveStatus = (message, ok = true) => {
+        setStatusMessage(saveTplStatusEl, message, ok ? "success" : "error");
+      };
+
+      const setRunStatus = (message, ok = true) => {
+        setStatusMessage(runStatusEl, message, ok ? "success" : "error");
+      };
+
+      const escapeHtml = (value) =>
+        String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+
+      const formatTime = (value) => {
+        if (!value) {
+          return "-";
+        }
+
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+          return "-";
+        }
+
+        return date.toLocaleTimeString("id-ID");
+      };
+
+      const formatDateTimeLong = (value) => {
+        if (!value) {
+          return "-";
+        }
+
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+          return "-";
+        }
+
+        return date.toLocaleString("id-ID", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      };
+
+      const renderProfileSummary = (summary) => {
+        if (!summary?.loggedIn || !summary?.user) {
+          heroProfileNameEl.textContent = "-";
+          heroProfileEmailEl.textContent = "-";
+          heroProfileMembershipEl.textContent = "Belum login";
+          heroProfileExpiryEl.textContent = "-";
+          return;
+        }
+
+        const membership = summary.membership;
+        const membershipPlan = membership?.plan?.name || membership?.plan?.tier || "Belum aktif";
+        const membershipStatus = membership?.status || "-";
+        const isLifetime = String(membershipStatus).toLowerCase() === "lifetime_active";
+
+        heroProfileNameEl.textContent = summary.user.fullName || summary.user.email || "-";
+        heroProfileEmailEl.textContent = summary.user.email || "-";
+        heroProfileMembershipEl.textContent = `${membershipPlan} (${membershipStatus})`;
+        heroProfileExpiryEl.textContent = isLifetime
+          ? "Lifetime"
+          : formatDateTimeLong(membership?.ends_at);
+      };
+
+      const refreshProfileSummary = async () => {
+        try {
+          const profileSummary = await apiGet("/api/subscription/summary");
+          renderProfileSummary(profileSummary);
+        } catch {
+          renderProfileSummary(null);
+        }
+      };
+
+      const statusLabelMap = {
+        success: "Berhasil",
+        stopped: "Dihentikan",
+        failed: "Gagal",
+        running: "Berjalan",
+      };
+
+      const modeLabelMap = {
+        render: "Render",
+        test: "Uji",
+      };
+
+      const refreshStatus = async () => {
+        try {
+          const status = await apiGet("/api/status");
+          const nextTotal = Number(status.completedProjectsTotal);
+          completedProjectsTotal = Number.isFinite(nextTotal)
+            ? nextTotal
+            : projectQueue.filter((project) => project.status === "Selesai").length;
+
+          runButton.disabled = status.running || isQueueRunning;
+          stopButton.disabled = !status.running;
+          updatePrimaryRunButton();
+
+          const line = status.running
+            ? `${status.stopRequested ? "Penghentian sedang berjalan" : "Render sedang berjalan"}. Mulai: ${status.startedAt || "-"}`
+            : `Siap. Kode proses terakhir: ${status.exitCode ?? "-"}`;
+
+          setRunStatus(line, !status.running && (status.exitCode === null || status.exitCode === 0));
+
+          if (status.running) {
+            setMetricState(status.stopRequested ? "Menghentikan" : "Berjalan", status.stopRequested ? "warn" : "info");
+          } else if (status.exitCode === 0 || status.exitCode === null) {
+            setMetricState("Siap", "ok");
+          } else {
+            setMetricState("Perlu Tinjauan", "bad");
+          }
+
+          logsEl.textContent = (status.logs || []).join("\n");
+          logsEl.scrollTop = logsEl.scrollHeight;
+          renderHistory(status.history || [], status.outputDir);
+          requestQueueHeightSync();
+        } catch (error) {
+          setRunStatus(error.message, false);
+          setMetricState("Gangguan", "bad");
+          requestQueueHeightSync();
+        }
+      };
+
+      const openOutputFolder = async () => {
+        try {
+          const data = await apiPost("/api/open-output", {});
+          setRunStatus(`Folder output dibuka: ${data.path}`, true);
+        } catch (error) {
+          setRunStatus(error.message, false);
+        }
+      };
+
+      const renderHistory = (history, outputDir) => {
+        const rows = [...(history || [])].slice(-24).reverse();
+
+        if (rows.length === 0) {
+          historyBody.innerHTML = "<tr><td colspan='6'>Belum ada riwayat proses render.</td></tr>";
+          historySummary.textContent = `Direktori output: ${outputDir || "out/batch"}`;
+          return;
+        }
+
+        historySummary.textContent = `Direktori output: ${outputDir || "out/batch"} | Total riwayat: ${history.length}`;
+
+        historyBody.innerHTML = rows
+          .map((item) => {
+            const statusClass = item.status === "success"
+              ? "status-success"
+              : item.status === "stopped"
+                ? "status-stopped"
+              : item.status === "failed"
+                ? "status-failed"
+                : "status-running";
+
+            const statusLabel = statusLabelMap[item.status] || item.status;
+            const modeLabel = modeLabelMap[item.mode] || item.mode;
+
+            return `<tr>
+              <td>${escapeHtml(item.index)}/${escapeHtml(item.total)}</td>
+              <td title="${escapeHtml(item.outputPath)}">${escapeHtml(item.fileName)}</td>
+              <td><span class="status-chip ${statusClass}">${escapeHtml(statusLabel)}</span></td>
+              <td>${escapeHtml(modeLabel)}</td>
+              <td>${escapeHtml(formatTime(item.startedAt))}</td>
+              <td>${escapeHtml(formatTime(item.finishedAt))}</td>
+            </tr>`;
+          })
+          .join("");
+      };
+
+      const runBatch = async () => {
+        try {
+          await apiPost("/api/run", {
+            mode: "render",
+            path: "batch/tasks.tsk",
+            composition: DEFAULT_COMPOSITION_ID,
+            resolution: resolutionEl.value,
+            limit: 1,
+          });
+          stopQueueRequested = false;
+          setRunStatus("Proses batch dimulai.", true);
+          setMetricState("Berjalan", "info");
+          await refreshStatus();
+        } catch (error) {
+          setRunStatus(error.message, false);
+          setMetricState("Perlu Tinjauan", "bad");
+        }
+      };
+
+      const stopBatch = async () => {
+        try {
+          if (isQueueRunning) {
+            stopQueueRequested = true;
+            setQueueStatus("Permintaan penghentian diterima.", false);
+          }
+
+          await apiPost("/api/stop", {});
+          stopButton.disabled = true;
+          setRunStatus("Permintaan penghentian dikirim.", true);
+          setMetricState("Menghentikan", "warn");
+        } catch (error) {
+          setRunStatus(error.message, false);
+          setMetricState("Perlu Tinjauan", "bad");
+        }
+      };
+
+      const saveTemplate = async () => {
+        const templateName = DEFAULT_TEMPLATE_NAME;
+        const compId = DEFAULT_COMPOSITION_ID;
+        const templateCode = tplCodeInput.value;
+        const rootCode = rootCodeInput.value;
+
+        btnSaveTemplate.disabled = true;
+
+        try {
+          setSaveStatus("Menganalisis template untuk penyesuaian responsif...", true);
+
+          const preview = await apiPost("/api/template-autofix-preview", {
+            templateCode,
+          });
+
+          projectQueue.push({
+            templateName,
+            compId,
+            templateCode,
+            rootCode,
+            status: "Dalam antrean",
+            autoFixPreview: !!preview.autoFixed,
+            autoFixApplied: null,
+            errorMessage: "",
+          });
+
+          renderQueue();
+
+          const autoFixText = preview.autoFixed
+            ? "Penyesuaian otomatis terdeteksi dan akan diterapkan saat injeksi."
+            : "Template sudah responsif, tidak memerlukan penyesuaian otomatis.";
+
+          setSaveStatus(
+            `Template ${templateName} berhasil ditambahkan ke antrean (${projectQueue.length} proyek). ${autoFixText}`,
+            true,
+          );
+        } catch (error) {
+          setSaveStatus(`Gagal menganalisis template: ${error.message}`, false);
+        } finally {
+          btnSaveTemplate.disabled = false;
+        }
+      };
+
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      const pollUntilDone = async () => {
+        while (true) {
+          await sleep(2000);
+          const status = await apiGet("/api/status");
+          if (!status.running) {
+            return {
+              success: status.exitCode === 0,
+              stopped: !!status.stopRequested,
+            };
+          }
+        }
+      };
+
+      const runAllQueuedProjects = async () => {
+        if (projectQueue.length === 0 || isQueueRunning) return;
+
+        isQueueRunning = true;
+        stopQueueRequested = false;
+        renderQueue();
+        setStatusMessage(queueStatusEl, "", "info");
+        setMetricState("Berjalan", "info");
+
+        for (let i = 0; i < projectQueue.length; i++) {
+          if (stopQueueRequested) {
+            break;
+          }
+
+          const q = projectQueue[i];
+
+          try {
+            q.status = "Menyiapkan template...";
+            renderQueue();
+
+            const saveResult = await apiPost("/api/save-template", {
+              templateName: q.templateName,
+              templateCode: q.templateCode,
+              rootCode: q.rootCode,
+              compositionId: q.compId,
+            });
+
+            q.autoFixApplied = !!saveResult.autoFixed;
+            q.errorMessage = "";
+
+            let completed = false;
+            for (let attempt = 1; attempt <= MAX_RENDER_RETRY; attempt++) {
+              if (stopQueueRequested) {
+                break;
+              }
+
+              q.status = `Memproses (${attempt}/${MAX_RENDER_RETRY})`;
+              q.errorMessage = attempt > 1
+                ? `Percobaan ulang ${attempt}/${MAX_RENDER_RETRY}`
+                : "";
+              renderQueue();
+
+              await apiPost("/api/run", {
+                mode: "render",
+                path: "batch/tasks.tsk",
+                composition: q.compId,
+                resolution: resolutionEl.value,
+                limit: 1,
+              });
+
+              const result = await pollUntilDone();
+
+              if (stopQueueRequested || result.stopped) {
+                q.status = "Dihentikan";
+                q.errorMessage = "Dihentikan oleh operator.";
+                completed = true;
+                break;
+              }
+
+              if (result.success) {
+                q.status = "Selesai";
+                q.errorMessage = "";
+                completed = true;
+                break;
+              }
+
+              if (attempt === MAX_RENDER_RETRY) {
+                q.status = "Gagal";
+                q.errorMessage = `Gagal setelah ${MAX_RENDER_RETRY} percobaan.`;
+                completed = true;
+              } else {
+                q.status = `Menunggu percobaan ulang (${attempt + 1}/${MAX_RENDER_RETRY})`;
+                q.errorMessage = `Percobaan ${attempt} gagal. Menjalankan ulang...`;
+                renderQueue();
+              }
+
+              await refreshStatus();
+            }
+
+            if (!completed && stopQueueRequested) {
+              q.status = "Dihentikan";
+              q.errorMessage = "Dihentikan oleh operator.";
+            }
+          } catch (error) {
+            q.status = "Kesalahan";
+            q.errorMessage = error && error.message ? error.message : "Terjadi kesalahan.";
+            console.error("Queue execution error:", error);
+          }
+
+          renderQueue();
+          await refreshStatus();
+        }
+
+        isQueueRunning = false;
+        renderQueue();
+
+        if (stopQueueRequested) {
+          setQueueStatus("Antrean dihentikan.", false);
+          setMetricState("Dihentikan", "warn");
+        } else {
+          setQueueStatus("Semua proyek telah diproses.", true);
+          setMetricState("Selesai", "ok");
+        }
+      };
+
+      const runPrimary = async () => {
+        if (projectQueue.length > 0) {
+          await runAllQueuedProjects();
+          return;
+        }
+
+        await runBatch();
+      };
+
+      btnClearQueue.addEventListener("click", () => {
+        projectQueue = [];
+        setQueueStatus("Antrean berhasil dibersihkan.", true);
+        setStatusMessage(saveTplStatusEl, "", "info");
+        renderQueue();
+      });
+
+      resolutionTriggerEl.addEventListener("click", toggleResolutionMenu);
+
+      resolutionTriggerEl.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openResolutionMenu();
+        }
+      });
+
+      resolutionOptionEls.forEach((optionEl, index) => {
+        optionEl.addEventListener("click", () => {
+          const nextValue = optionEl.dataset.value;
+          if (!nextValue) {
+            return;
+          }
+
+          resolutionEl.value = nextValue;
+          syncResolutionUI();
+          resolutionEl.dispatchEvent(new Event("change", {bubbles: true}));
+          closeResolutionMenu();
+          resolutionTriggerEl.focus();
+        });
+
+        optionEl.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            optionEl.click();
+            return;
+          }
+
+          if (event.key === "Escape") {
+            event.preventDefault();
+            closeResolutionMenu();
+            resolutionTriggerEl.focus();
+            return;
+          }
+
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            const direction = event.key === "ArrowDown" ? 1 : -1;
+            const nextIndex = (index + direction + resolutionOptionEls.length) % resolutionOptionEls.length;
+            resolutionOptionEls[nextIndex].focus();
+          }
+        });
+      });
+
+      document.addEventListener("click", (event) => {
+        if (!resolutionSelectEl.contains(event.target)) {
+          closeResolutionMenu();
+        }
+      });
+
+      resolutionEl.addEventListener("change", syncResolutionUI);
+
+      document.getElementById("btn-run").addEventListener("click", runPrimary);
+      document.getElementById("btn-stop").addEventListener("click", stopBatch);
+      document.getElementById("btn-open-output").addEventListener("click", openOutputFolder);
+      document.getElementById("btn-refresh").addEventListener("click", refreshStatus);
+      document.getElementById("btn-save-template").addEventListener("click", saveTemplate);
+
+      if (typeof ResizeObserver !== "undefined" && batchControlCardEl) {
+        const queueHeightObserver = new ResizeObserver(() => {
+          requestQueueHeightSync();
+        });
+        queueHeightObserver.observe(batchControlCardEl);
+      }
+
+      window.addEventListener("resize", requestQueueHeightSync);
+
+      refreshStatus();
+      refreshProfileSummary();
+      syncResolutionUI();
+      renderQueue();
+      requestQueueHeightSync();
+      setInterval(refreshStatus, 1500);
+      setInterval(refreshProfileSummary, 15000);
+    </script>
+  </body>
+</html>
