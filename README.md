@@ -164,6 +164,9 @@ Nilai env publik desktop app:
 SUBSCRIPTION_BACKEND_URL=https://apimotion.narrapedia.top/subscription
 ```
 
+Skenario uji end-to-end readiness (login, checkout, verify-payment, webhook) ada di:
+- [docs/execution/09-vps-e2e-commercial-readiness.md](docs/execution/09-vps-e2e-commercial-readiness.md)
+
 ## Key Rotation (Server Secrets)
 
 Setelah hardening publik aktif, rotasi key internal yang pernah dipakai di desktop/debug build:

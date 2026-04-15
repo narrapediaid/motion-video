@@ -83,6 +83,8 @@ const SUBSCRIPTION_PRICE_BY_TIER = Object.freeze(
     return acc;
   }, {}),
 );
+const VALID_RENDER_MODES = new Set(["render", "test"]);
+const VALID_RENDER_STATUSES = new Set(["running", "success", "failed", "stopped"]);
 
 class HttpError extends Error {
   statusCode: number;
@@ -804,6 +806,195 @@ const handleVerifyPayment = async (request: Request) => {
   });
 };
 
+const normalizeOptionalIsoTimestamp = (value: unknown, label: string) => {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return null;
+  }
+
+  const timestampMs = Date.parse(raw);
+  if (!Number.isFinite(timestampMs)) {
+    throw new HttpError(400, `${label} must be a valid ISO datetime`);
+  }
+
+  return new Date(timestampMs).toISOString();
+};
+
+const handleRenderSync = async (request: Request) => {
+  const { user } = await authenticateUser(request);
+  const body = await parseJsonBody(request);
+
+  const jobId = String(body.jobId || body.job_id || "").trim();
+  const mode = String(body.mode || "").trim().toLowerCase();
+  const status = String(body.status || "").trim().toLowerCase();
+
+  if (!jobId) {
+    throw new HttpError(400, "jobId is required");
+  }
+
+  if (!VALID_RENDER_MODES.has(mode)) {
+    throw new HttpError(400, "mode must be one of: render, test");
+  }
+
+  if (!VALID_RENDER_STATUSES.has(status)) {
+    throw new HttpError(400, "status must be one of: running, success, failed, stopped");
+  }
+
+  const { data: existingRow, error: existingError } = await serviceClient
+    .from("render_jobs")
+    .select("id,status")
+    .eq("job_id", jobId)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new HttpError(502, `Failed to read render job: ${existingError.message}`);
+  }
+
+  const payload = {
+    job_id: jobId,
+    user_id: user.id,
+    mode,
+    input_path: String(body.inputPath || body.input_path || "").trim() || null,
+    output_path: String(body.outputPath || body.output_path || "").trim() || null,
+    file_name: String(body.fileName || body.file_name || "").trim() || null,
+    status,
+    started_at: normalizeOptionalIsoTimestamp(body.startedAt || body.started_at, "startedAt"),
+    finished_at: normalizeOptionalIsoTimestamp(body.finishedAt || body.finished_at, "finishedAt"),
+    error: String(body.error || "").trim() || null,
+  };
+
+  if (existingRow?.id) {
+    const { error: updateError } = await serviceClient
+      .from("render_jobs")
+      .update(payload)
+      .eq("id", String(existingRow.id));
+
+    if (updateError) {
+      throw new HttpError(502, `Failed to update render job: ${updateError.message}`);
+    }
+  } else {
+    const { error: insertError } = await serviceClient
+      .from("render_jobs")
+      .insert([payload]);
+
+    if (insertError) {
+      throw new HttpError(502, `Failed to insert render job: ${insertError.message}`);
+    }
+  }
+
+  if (status === "success" && String(existingRow?.status || "") !== "success") {
+    const { error: incrementError } = await serviceClient.rpc("increment_user_render_total", {
+      p_user_id: user.id,
+    });
+
+    if (incrementError) {
+      throw new HttpError(502, `Failed to increment user render total: ${incrementError.message}`);
+    }
+
+    const { data: existingAuditLog, error: auditReadError } = await serviceClient
+      .from("audit_logs")
+      .select("id")
+      .eq("actor_user_id", user.id)
+      .eq("entity_type", "render_job")
+      .eq("action", "render_success")
+      .eq("request_id", jobId)
+      .limit(1)
+      .maybeSingle();
+
+    if (auditReadError) {
+      throw new HttpError(502, `Failed to read render audit log: ${auditReadError.message}`);
+    }
+
+    if (!existingAuditLog) {
+      const { error: auditInsertError } = await serviceClient
+        .from("audit_logs")
+        .insert([
+          {
+            actor_user_id: user.id,
+            actor_role: "user",
+            entity_type: "render_job",
+            entity_id: jobId,
+            action: "render_success",
+            after_state: {
+              mode,
+              file_name: payload.file_name,
+              output_path: payload.output_path,
+              started_at: payload.started_at,
+              finished_at: payload.finished_at,
+            },
+            request_id: jobId,
+          },
+        ]);
+
+      if (auditInsertError) {
+        throw new HttpError(502, `Failed to insert render audit log: ${auditInsertError.message}`);
+      }
+    }
+  }
+
+  const { data: statsRow, error: statsError } = await serviceClient
+    .from("user_render_stats")
+    .select("completed_projects_total,last_completed_at")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (statsError) {
+    throw new HttpError(502, `Failed to read user render stats: ${statsError.message}`);
+  }
+
+  return json(200, {
+    ok: true,
+    jobId,
+    status,
+    completedProjectsTotal: Number(statsRow?.completed_projects_total || 0),
+    lastCompletedAt: String(statsRow?.last_completed_at || ""),
+  });
+};
+
+const handleRenderSummary = async (request: Request) => {
+  const { user } = await authenticateUser(request);
+
+  const { data: statsRow, error: statsError } = await serviceClient
+    .from("user_render_stats")
+    .select("completed_projects_total,last_completed_at")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (statsError) {
+    throw new HttpError(502, `Failed to read user render stats: ${statsError.message}`);
+  }
+
+  if (statsRow && Number.isFinite(Number(statsRow.completed_projects_total))) {
+    return json(200, {
+      ok: true,
+      completedProjectsTotal: Number(statsRow.completed_projects_total || 0),
+      lastCompletedAt: String(statsRow.last_completed_at || ""),
+      source: "user_render_stats",
+    });
+  }
+
+  const { count, error: auditCountError } = await serviceClient
+    .from("audit_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("actor_user_id", user.id)
+    .eq("entity_type", "render_job")
+    .eq("action", "render_success");
+
+  if (auditCountError) {
+    throw new HttpError(502, `Failed to count render audit logs: ${auditCountError.message}`);
+  }
+
+  return json(200, {
+    ok: true,
+    completedProjectsTotal: Number(count || 0),
+    lastCompletedAt: "",
+    source: "audit_logs",
+  });
+};
+
 const handleWebhook = async (request: Request) => {
   const body = await parseJsonBody(request);
   const payload = body as MidtransNotification;
@@ -862,6 +1053,16 @@ Deno.serve(async (request) => {
     if (request.method === "POST" && routePath === "/verify-payment") {
       await authenticateUser(request); // enforce auth
       return await handleVerifyPayment(request);
+    }
+
+    if (request.method === "POST" && routePath === "/render/sync") {
+      await authenticateUser(request); // enforce auth
+      return await handleRenderSync(request);
+    }
+
+    if (request.method === "GET" && routePath === "/render/summary") {
+      await authenticateUser(request); // enforce auth
+      return await handleRenderSummary(request);
     }
 
     if (request.method === "POST" && routePath === "/webhook") {

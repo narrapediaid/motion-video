@@ -185,6 +185,81 @@ const getAppRoot = () => {
   return appPath;
 };
 
+const copyPath = (sourcePath, targetPath) => {
+  if (!fs.existsSync(sourcePath)) {
+    return;
+  }
+
+  fs.rmSync(targetPath, {recursive: true, force: true});
+  fs.cpSync(sourcePath, targetPath, {recursive: true, force: true});
+};
+
+const copyFile = (sourcePath, targetPath) => {
+  if (!fs.existsSync(sourcePath)) {
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(targetPath), {recursive: true});
+  fs.copyFileSync(sourcePath, targetPath);
+};
+
+const ensureNodeModulesWorkspaceLink = ({appRoot, workspaceRoot}) => {
+  const sourceNodeModules = path.resolve(appRoot, "node_modules");
+  const targetNodeModules = path.resolve(workspaceRoot, "node_modules");
+
+  if (!fs.existsSync(sourceNodeModules)) {
+    throw new Error(`node_modules tidak ditemukan di ${sourceNodeModules}`);
+  }
+
+  if (fs.existsSync(targetNodeModules)) {
+    return;
+  }
+
+  try {
+    fs.symlinkSync(
+      sourceNodeModules,
+      targetNodeModules,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+  } catch (error) {
+    // Fallback: copy when symlink/junction is not available in host policy.
+    log(`node_modules symlink gagal, fallback copy: ${error instanceof Error ? error.message : String(error)}`);
+    fs.cpSync(sourceNodeModules, targetNodeModules, {recursive: true, force: true});
+  }
+};
+
+const ensureRuntimeWorkspace = (appRoot) => {
+  if (!app.isPackaged) {
+    return appRoot;
+  }
+
+  const workspaceRoot = path.resolve(app.getPath("userData"), "runtime-workspace");
+  fs.mkdirSync(workspaceRoot, {recursive: true});
+
+  ensureNodeModulesWorkspaceLink({appRoot, workspaceRoot});
+
+  // Always refresh scripts + configs so bugfixes from new app build are applied.
+  copyPath(path.resolve(appRoot, "scripts"), path.resolve(workspaceRoot, "scripts"));
+  copyFile(path.resolve(appRoot, "package.json"), path.resolve(workspaceRoot, "package.json"));
+  copyFile(path.resolve(appRoot, "remotion.config.ts"), path.resolve(workspaceRoot, "remotion.config.ts"));
+  copyFile(path.resolve(appRoot, "tsconfig.json"), path.resolve(workspaceRoot, "tsconfig.json"));
+  copyFile(path.resolve(appRoot, ".env.example"), path.resolve(workspaceRoot, ".env.example"));
+  copyFile(path.resolve(appRoot, ".env.public.example"), path.resolve(workspaceRoot, ".env.public.example"));
+
+  // Initialize mutable project assets once, then keep user edits.
+  const initDirs = ["src", "batch", "public"];
+  initDirs.forEach((dirName) => {
+    const sourceDir = path.resolve(appRoot, dirName);
+    const targetDir = path.resolve(workspaceRoot, dirName);
+    if (!fs.existsSync(targetDir) && fs.existsSync(sourceDir)) {
+      fs.cpSync(sourceDir, targetDir, {recursive: true, force: true});
+    }
+  });
+
+  fs.mkdirSync(path.resolve(workspaceRoot, "out", "batch"), {recursive: true});
+  return workspaceRoot;
+};
+
 const appendEnvCandidatesFromDir = (candidates, startDir, maxDepth = 8) => {
   if (!startDir) {
     return;
@@ -319,8 +394,13 @@ const startBatchUiServer = async () => {
   serverPort = await findAvailablePort(DEFAULT_PORT, PORT_SCAN_LIMIT);
 
   const appRoot = getAppRoot();
-  const serverScriptPath = path.resolve(appRoot, "scripts", "batch-ui.mjs");
-  const envFile = resolveBatchUiEnvFile(appRoot);
+  const runtimeRoot = ensureRuntimeWorkspace(appRoot);
+  const serverScriptPath = path.resolve(runtimeRoot, "scripts", "batch-ui.mjs");
+  const envFile = resolveBatchUiEnvFile(runtimeRoot);
+
+  if (runtimeRoot !== appRoot) {
+    log(`Using runtime workspace: ${runtimeRoot}`);
+  }
 
   if (envFile) {
     log(`Using env file: ${envFile}`);
@@ -334,7 +414,7 @@ const startBatchUiServer = async () => {
   });
 
   serverProcess = spawn(process.execPath, [serverScriptPath], {
-    cwd: appRoot,
+    cwd: runtimeRoot,
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",

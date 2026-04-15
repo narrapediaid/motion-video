@@ -16,6 +16,8 @@ Rute yang dipakai desktop app:
 - `POST /checkout`
 - `POST /verify-payment`
 - `POST /voucher/validate`
+- `POST /render/sync` (sinkron status job render per user)
+- `GET /render/summary` (total proyek selesai per user)
 - `GET /health`
 
 Rute callback provider:

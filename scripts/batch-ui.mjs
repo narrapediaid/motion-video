@@ -462,17 +462,21 @@ const buildSubscriptionBackendUrl = (config, endpointPath) => {
   return `${baseUrl.replace(/\/$/, "")}${endpointPath}`;
 };
 
-const forwardSubscriptionRequest = async ({config, req, endpointPath, method = "POST", body}) => {
+const requestSubscriptionBackend = async ({
+  config,
+  endpointPath,
+  method = "POST",
+  body,
+  bearerToken = "",
+}) => {
   const targetUrl = buildSubscriptionBackendUrl(config, endpointPath);
-  const headerToken = getBearerTokenOptional(req);
-  const cookieToken = getCookieValue(req, "sb_access_token");
-  const bearerToken = headerToken || cookieToken;
+  const normalizedToken = String(bearerToken || "").trim();
 
   const response = await fetch(targetUrl, {
     method,
     headers: {
       "Content-Type": "application/json",
-      ...(bearerToken ? {Authorization: `Bearer ${bearerToken}`} : {}),
+      ...(normalizedToken ? {Authorization: `Bearer ${normalizedToken}`} : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -488,6 +492,20 @@ const forwardSubscriptionRequest = async ({config, req, endpointPath, method = "
   }
 
   return data;
+};
+
+const forwardSubscriptionRequest = async ({config, req, endpointPath, method = "POST", body}) => {
+  const headerToken = getBearerTokenOptional(req);
+  const cookieToken = getCookieValue(req, "sb_access_token");
+  const bearerToken = headerToken || cookieToken;
+
+  return requestSubscriptionBackend({
+    config,
+    endpointPath,
+    method,
+    body,
+    bearerToken,
+  });
 };
 
 const authenticateUserFromToken = async (token, config) => {
@@ -1692,25 +1710,40 @@ const parseContentRangeTotal = (value) => {
   return Number.isFinite(total) ? total : null;
 };
 
-const getAuditLogCompletedProjectsTotalForUser = async ({config, userId}) => {
+const getAuditLogCompletedProjectsTotalForUser = async ({config, userId, accessToken = ""}) => {
   if (!config || !userId) {
+    return null;
+  }
+
+  const internalEnabled = hasInternalSubscriptionConfig(config);
+  const normalizedAccessToken = String(accessToken || "").trim();
+  if (!internalEnabled && !normalizedAccessToken) {
     return null;
   }
 
   const endpointPath = `/rest/v1/audit_logs?actor_user_id=eq.${encodeURIComponent(userId)}&entity_type=eq.render_job&action=eq.render_success&select=id&limit=1`;
 
   try {
+    const apikey = internalEnabled ? config.supabaseServiceRoleKey : config.supabaseAnonKey;
+    const bearerToken = internalEnabled ? config.supabaseServiceRoleKey : normalizedAccessToken;
+    if (!apikey || !bearerToken) {
+      return null;
+    }
+
     const response = await fetch(`${config.supabaseUrl}${endpointPath}`, {
       method: "GET",
       headers: {
-        apikey: config.supabaseServiceRoleKey,
-        Authorization: `Bearer ${config.supabaseServiceRoleKey}`,
+        apikey,
+        Authorization: `Bearer ${bearerToken}`,
         Prefer: "count=exact",
       },
     });
 
     if (!response.ok) {
       const raw = await response.text();
+      if (!internalEnabled && (response.status === 401 || response.status === 403)) {
+        return null;
+      }
       throw new HttpError(
         502,
         `Supabase request failed (${response.status}) on ${endpointPath}: ${raw}`,
@@ -1720,13 +1753,76 @@ const getAuditLogCompletedProjectsTotalForUser = async ({config, userId}) => {
     const total = parseContentRangeTotal(response.headers.get("content-range"));
     return Number.isFinite(total) ? total : null;
   } catch (error) {
-    appendLog(`WARN: Gagal membaca total proyek dari audit log: ${error instanceof Error ? error.message : String(error)}`);
+    if (internalEnabled) {
+      appendLog(`WARN: Gagal membaca total proyek dari audit log: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return null;
+  }
+};
+
+const syncRenderHistoryEntryViaBackend = async ({config, entry, accessToken = ""}) => {
+  const normalizedAccessToken = String(accessToken || "").trim();
+  if (!config?.backendBaseUrl || !normalizedAccessToken) {
+    return;
+  }
+
+  try {
+    await requestSubscriptionBackend({
+      config,
+      endpointPath: "/render/sync",
+      method: "POST",
+      bearerToken: normalizedAccessToken,
+      body: {
+        jobId: entry.jobId,
+        mode: entry.mode,
+        inputPath: entry.inputPath || null,
+        outputPath: entry.outputPath || null,
+        fileName: entry.fileName || null,
+        status: entry.status,
+        startedAt: entry.startedAt || null,
+        finishedAt: entry.finishedAt || null,
+        error: entry.error || null,
+      },
+    });
+  } catch (error) {
+    if (error instanceof HttpError && [401, 403].includes(error.statusCode)) {
+      return;
+    }
+    appendLog(`WARN: Gagal sinkron proyek ke backend: ${error instanceof Error ? error.message : String(error)}`);
+  }
+};
+
+const getCompletedProjectsTotalViaBackend = async ({config, accessToken = ""}) => {
+  const normalizedAccessToken = String(accessToken || "").trim();
+  if (!config?.backendBaseUrl || !normalizedAccessToken) {
+    return null;
+  }
+
+  try {
+    const summary = await requestSubscriptionBackend({
+      config,
+      endpointPath: "/render/summary",
+      method: "GET",
+      bearerToken: normalizedAccessToken,
+    });
+
+    const total = Number(summary?.completedProjectsTotal);
+    return Number.isFinite(total) ? total : null;
+  } catch (error) {
+    if (error instanceof HttpError && [401, 403].includes(error.statusCode)) {
+      return null;
+    }
+    appendLog(`WARN: Gagal membaca total proyek dari backend: ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
 };
 
 const syncRenderSuccessAuditLog = async ({config, entry}) => {
   if (!config || !entry?.userId || !entry?.jobId || entry.status !== "success") {
+    return;
+  }
+
+  if (!hasInternalSubscriptionConfig(config)) {
     return;
   }
 
@@ -1768,12 +1864,17 @@ const syncRenderSuccessAuditLog = async ({config, entry}) => {
   }
 };
 
-const syncRenderHistoryEntry = async ({config, entry}) => {
+const syncRenderHistoryEntry = async ({config, entry, accessToken = ""}) => {
   if (!config) {
     return;
   }
 
   if (!entry?.userId || !entry?.jobId) {
+    return;
+  }
+
+  if (!hasInternalSubscriptionConfig(config)) {
+    await syncRenderHistoryEntryViaBackend({config, entry, accessToken});
     return;
   }
 
@@ -1838,9 +1939,14 @@ const syncRenderHistoryEntry = async ({config, entry}) => {
   await syncRenderSuccessAuditLog({config, entry});
 };
 
-const getCompletedProjectsTotalForUser = async ({config, userId}) => {
+const getCompletedProjectsTotalForUser = async ({config, userId, accessToken = ""}) => {
   if (!config || !userId) {
     return null;
+  }
+
+  const internalEnabled = hasInternalSubscriptionConfig(config);
+  if (!internalEnabled) {
+    return getCompletedProjectsTotalViaBackend({config, accessToken});
   }
 
   if (!renderStatsStorageDisabled) {
@@ -1864,7 +1970,11 @@ const getCompletedProjectsTotalForUser = async ({config, userId}) => {
     }
   }
 
-  return getAuditLogCompletedProjectsTotalForUser({config, userId});
+  return getAuditLogCompletedProjectsTotalForUser({
+    config,
+    userId,
+    accessToken,
+  });
 };
 
 const openOutputFolder = () => {
@@ -1889,7 +1999,16 @@ const openOutputFolder = () => {
   return targetPath;
 };
 
-const runBatch = ({mode, inputPath, composition, resolution, limit, actorUserId = null, statsConfig = null}) => {
+const runBatch = ({
+  mode,
+  inputPath,
+  composition,
+  resolution,
+  limit,
+  actorUserId = null,
+  statsConfig = null,
+  statsAccessToken = "",
+}) => {
   if (state.running) {
     throw new Error("A batch process is already running");
   }
@@ -1944,7 +2063,7 @@ const runBatch = ({mode, inputPath, composition, resolution, limit, actorUserId 
     if (startMatch) {
       const previousJob = markJobDoneIfRunning(currentJobId, "success");
       if (previousJob) {
-        void syncRenderHistoryEntry({config: statsConfig, entry: previousJob});
+        void syncRenderHistoryEntry({config: statsConfig, entry: previousJob, accessToken: statsAccessToken});
       }
 
       const index = Number(startMatch[1]);
@@ -1970,7 +2089,7 @@ const runBatch = ({mode, inputPath, composition, resolution, limit, actorUserId 
       };
 
       pushHistory(historyEntry);
-      void syncRenderHistoryEntry({config: statsConfig, entry: historyEntry});
+      void syncRenderHistoryEntry({config: statsConfig, entry: historyEntry, accessToken: statsAccessToken});
 
       return;
     }
@@ -1989,7 +2108,7 @@ const runBatch = ({mode, inputPath, composition, resolution, limit, actorUserId 
           finishedAt: new Date().toISOString(),
           error: stream === "stderr" ? "Render command failed" : null,
         });
-        void syncRenderHistoryEntry({config: statsConfig, entry: target});
+        void syncRenderHistoryEntry({config: statsConfig, entry: target, accessToken: statsAccessToken});
       }
 
       if (target?.jobId === currentJobId) {
@@ -2038,7 +2157,7 @@ const runBatch = ({mode, inputPath, composition, resolution, limit, actorUserId 
       state.stopRequested ? "stopped" : code === 0 ? "success" : "failed",
     );
     if (currentJob) {
-      void syncRenderHistoryEntry({config: statsConfig, entry: currentJob});
+      void syncRenderHistoryEntry({config: statsConfig, entry: currentJob, accessToken: statsAccessToken});
     }
     if (state.stopRequested) {
       appendLog("Process stopped by user");
@@ -2053,7 +2172,7 @@ const runBatch = ({mode, inputPath, composition, resolution, limit, actorUserId 
     state.finishedAt = new Date().toISOString();
     const currentJob = markJobDoneIfRunning(currentJobId, state.stopRequested ? "stopped" : "failed");
     if (currentJob) {
-      void syncRenderHistoryEntry({config: statsConfig, entry: currentJob});
+      void syncRenderHistoryEntry({config: statsConfig, entry: currentJob, accessToken: statsAccessToken});
     }
     appendLog(`ERR: ${error.message}`);
   });
@@ -2226,7 +2345,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/run") {
-      const {config: statsConfig, user} = await requireActiveMembershipSession(req);
+      const {config: statsConfig, token, user} = await requireActiveMembershipSession(req);
       const body = JSON.parse(await readRequestBody(req));
       const mode = body.mode === "render" ? "render" : "test";
       const resolution = body.resolution === "2k" || body.resolution === "4k" || body.resolution === "1080p"
@@ -2244,6 +2363,7 @@ const server = http.createServer(async (req, res) => {
         limit,
         actorUserId: user.id,
         statsConfig,
+        statsAccessToken: token,
       });
       sendJson(res, 200, {running: true, mode});
       return;
@@ -2276,11 +2396,12 @@ const server = http.createServer(async (req, res) => {
           const dbTotal = await getCompletedProjectsTotalForUser({
             config,
             userId: user.id,
+            accessToken,
           });
 
           if (Number.isFinite(dbTotal)) {
             completedProjectsTotal = dbTotal;
-            completedProjectsSource = "database";
+            completedProjectsSource = hasInternalSubscriptionConfig(config) ? "database" : "backend";
           }
         }
       } catch {
