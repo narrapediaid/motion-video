@@ -1823,6 +1823,96 @@ const IMPORT_EXTENSIONS = [
   ".json",
 ];
 
+const LOCALHOST_ASSET_URL_PATTERN = /https?:\/\/localhost(?::\d+)?\/([^\s"'`)}]+)/gi;
+
+const extractLocalhostAssetPaths = (code) => {
+  const source = String(code || "");
+  const found = new Set();
+  let match;
+
+  while ((match = LOCALHOST_ASSET_URL_PATTERN.exec(source)) !== null) {
+    const rawPath = String(match[1] || "").trim();
+    if (!rawPath) {
+      continue;
+    }
+
+    const withoutQuery = rawPath.split("?")[0].split("#")[0].trim();
+    const normalized = decodeURIComponent(withoutQuery).replace(/^\/+/, "");
+    if (!normalized) {
+      continue;
+    }
+
+    found.add(normalized);
+  }
+
+  return [...found];
+};
+
+const findExistingPath = (candidates) => {
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return "";
+};
+
+const ensureTemplateLocalhostAssets = (templateCode) => {
+  const assetPaths = extractLocalhostAssetPaths(templateCode);
+  if (assetPaths.length === 0) {
+    return {
+      detected: [],
+      copied: [],
+      missing: [],
+    };
+  }
+
+  const copied = [];
+  const missing = [];
+  const homeDir = resolveHomeDir();
+
+  for (const assetPath of assetPaths) {
+    const normalizedAssetPath = assetPath.replace(/\\/g, "/");
+    const targetPath = path.resolve(projectRoot, "public", normalizedAssetPath);
+    if (fs.existsSync(targetPath)) {
+      continue;
+    }
+
+    const baseName = path.basename(normalizedAssetPath);
+    const sourcePath = findExistingPath([
+      path.resolve(projectRoot, normalizedAssetPath),
+      path.resolve(projectRoot, "public", baseName),
+      path.resolve(projectRoot, "assets", normalizedAssetPath),
+      path.resolve(projectRoot, "assets", baseName),
+      path.resolve(projectRoot, "media", normalizedAssetPath),
+      path.resolve(projectRoot, "media", baseName),
+      homeDir ? path.resolve(homeDir, "Downloads", baseName) : "",
+      homeDir ? path.resolve(homeDir, "Music", baseName) : "",
+      homeDir ? path.resolve(homeDir, "Desktop", baseName) : "",
+    ]);
+
+    if (!sourcePath) {
+      missing.push(normalizedAssetPath);
+      continue;
+    }
+
+    fs.mkdirSync(path.dirname(targetPath), {recursive: true});
+    fs.copyFileSync(sourcePath, targetPath);
+    copied.push({
+      asset: normalizedAssetPath,
+      source: sourcePath,
+      target: targetPath,
+    });
+  }
+
+  return {
+    detected: assetPaths,
+    copied,
+    missing,
+  };
+};
+
 const hasImportTarget = (importPath, sourceDir, extraExistingPaths = new Set()) => {
   const absoluteBasePath = path.resolve(sourceDir, importPath);
   const candidates = [];
@@ -2613,6 +2703,7 @@ const server = http.createServer(async (req, res) => {
       const tplPath = path.resolve(projectRoot, "src", tplName);
       const rootPath = path.resolve(projectRoot, "src", "Root.tsx");
       const fixedTemplate = autoFixResponsiveTemplate(tplCode);
+      const assetScan = ensureTemplateLocalhostAssets(fixedTemplate.code);
       const templateComponentName = detectPrimaryExportedComponentName(fixedTemplate.code);
       let normalizedRootCode = normalizeRootCode({
         rootCode,
@@ -2627,6 +2718,13 @@ const server = http.createServer(async (req, res) => {
       const missingTemplateImports = findMissingRelativeImports(fixedTemplate.code, tplPath);
       if (missingTemplateImports.length > 0) {
         throw new Error(`Template references missing relative imports: ${missingTemplateImports.join(", ")}`);
+      }
+
+      if (assetScan.missing.length > 0) {
+        throw new Error(
+          `Template references missing local assets: ${assetScan.missing.join(", ")}. `
+          + "Letakkan file ke folder public/ atau Downloads agar sistem dapat auto-copy.",
+        );
       }
 
       let missingRootImports = findMissingRelativeImports(
@@ -2665,6 +2763,11 @@ const server = http.createServer(async (req, res) => {
 
       if (fixedTemplate.autoFixed) {
         fixedTemplate.notes.forEach((note) => appendLog(`Auto-fix: ${note}`));
+      }
+      if (assetScan.copied.length > 0) {
+        assetScan.copied.forEach((item) => {
+          appendLog(`Auto-fix: Copied asset ${item.asset} to public/ from ${item.source}`);
+        });
       }
 
       if (rootWasNormalized) {
