@@ -11,6 +11,12 @@ const {autoUpdater} = require("electron-updater");
 const DEFAULT_PORT = Number(process.env.BATCH_UI_PORT || 3210);
 const BATCH_UI_HOST = process.env.BATCH_UI_HOST || "127.0.0.1";
 const PORT_SCAN_LIMIT = 25;
+const REQUIRED_RUNTIME_MODULE_PATHS = [
+  ["remotion", "package.json"],
+  ["@remotion", "renderer", "package.json"],
+  ["@remotion", "cli", "package.json"],
+  ["@remotion", "compositor-win32-x64-msvc", "package.json"],
+];
 
 let mainWindow = null;
 let serverProcess = null;
@@ -236,6 +242,30 @@ const replaceNodeModulesWithCopy = ({sourceNodeModules, targetNodeModules}) => {
   fs.cpSync(sourceNodeModules, targetNodeModules, {recursive: true, force: true});
 };
 
+const hasRequiredRuntimeDependencies = (nodeModulesRoot) => {
+  return REQUIRED_RUNTIME_MODULE_PATHS.every((segments) => {
+    const targetPath = path.resolve(nodeModulesRoot, ...segments);
+    return fs.existsSync(targetPath);
+  });
+};
+
+const ensureRuntimeDependenciesHealthy = ({sourceNodeModules, targetNodeModules}) => {
+  if (!hasRequiredRuntimeDependencies(sourceNodeModules)) {
+    throw new Error(`Bundled dependencies tidak lengkap di ${sourceNodeModules}.`);
+  }
+
+  if (hasRequiredRuntimeDependencies(targetNodeModules)) {
+    return;
+  }
+
+  log("Runtime dependency check gagal, memperbaiki node_modules di workspace...");
+  replaceNodeModulesWithCopy({sourceNodeModules, targetNodeModules});
+
+  if (!hasRequiredRuntimeDependencies(targetNodeModules)) {
+    throw new Error(`Runtime dependencies tetap tidak lengkap setelah perbaikan otomatis di ${targetNodeModules}.`);
+  }
+};
+
 const ensureNodeModulesWorkspaceLink = ({appRoot, workspaceRoot}) => {
   const sourceNodeModules = path.resolve(appRoot, "node_modules");
   const targetNodeModules = path.resolve(workspaceRoot, "node_modules");
@@ -276,6 +306,8 @@ const ensureNodeModulesWorkspaceLink = ({appRoot, workspaceRoot}) => {
       throw new Error(`Tidak dapat menulis cache Remotion di ${targetNodeModules}`);
     }
   }
+
+  ensureRuntimeDependenciesHealthy({sourceNodeModules, targetNodeModules});
 };
 
 const ensureRuntimeWorkspace = (appRoot) => {
