@@ -11,7 +11,6 @@ const projectRoot = process.cwd();
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(scriptDir, "..");
 const defaultInputPath = path.join("batch", "tasks.tsk");
-const defaultOutputPath = path.join("out", "batch");
 const port = Number(process.env.BATCH_UI_PORT || 3210);
 const host = process.env.BATCH_UI_HOST || "127.0.0.1";
 const appUpdateTargetUrl = "https://narrapedia.top/tools/narrapedia-motion-batch";
@@ -19,6 +18,53 @@ const envLoadDiagnostics = {
   checkedFiles: [],
   loadedFiles: [],
 };
+
+const resolveHomeDir = () => {
+  const candidates = [
+    process.env.USERPROFILE,
+    process.env.HOME,
+    process.env.HOMEDRIVE && process.env.HOMEPATH
+      ? `${process.env.HOMEDRIVE}${process.env.HOMEPATH}`
+      : "",
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+
+  return candidates[0] || "";
+};
+
+const ensureDirectorySafe = (targetPath) => {
+  fs.mkdirSync(targetPath, {recursive: true});
+  return targetPath;
+};
+
+const resolveDefaultOutputPath = () => {
+  const envOutput =
+    process.env.BATCH_UI_OUTPUT_DIR?.trim()
+    || process.env.BATCH_OUTPUT_DIR?.trim()
+    || "";
+  if (envOutput) {
+    try {
+      return ensureDirectorySafe(path.resolve(envOutput));
+    } catch {
+      // Fall through to default Downloads path when env value is invalid/unwritable.
+    }
+  }
+
+  const homeDir = resolveHomeDir();
+  if (homeDir) {
+    const downloadsOutput = path.resolve(homeDir, "Downloads", "motion-video");
+    try {
+      return ensureDirectorySafe(downloadsOutput);
+    } catch {
+      // Fall through to workspace fallback.
+    }
+  }
+
+  return ensureDirectorySafe(path.resolve(projectRoot, "out", "batch"));
+};
+
+const defaultOutputPath = resolveDefaultOutputPath();
 
 const state = {
   running: false,
@@ -1691,9 +1737,30 @@ const toComponentIdentifier = (value) => {
   return identifier;
 };
 
-const normalizeRootCode = ({rootCode, templateName, compositionId}) => {
+const detectPrimaryExportedComponentName = (templateCode) => {
+  const source = String(templateCode || "");
+  const patterns = [
+    /export\s+const\s+([A-Za-z_$][\w$]*)\s*[:=]/m,
+    /export\s+function\s+([A-Za-z_$][\w$]*)\s*\(/m,
+    /export\s+class\s+([A-Za-z_$][\w$]*)\s+/m,
+  ];
+
+  for (const pattern of patterns) {
+    const match = source.match(pattern);
+    const candidate = match?.[1] ? String(match[1]).trim() : "";
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return "";
+};
+
+const normalizeRootCode = ({rootCode, templateName, compositionId, templateComponentName = ""}) => {
   const templateBaseName = path.basename(templateName, path.extname(templateName));
-  const componentName = toComponentIdentifier(templateBaseName);
+  const componentName = templateComponentName
+    ? toComponentIdentifier(templateComponentName)
+    : toComponentIdentifier(templateBaseName);
   const compositionName = typeof compositionId === "string" && compositionId.trim().length > 0
     ? compositionId.trim()
     : templateBaseName;
@@ -2150,7 +2217,7 @@ const getCompletedProjectsTotalForUser = async ({config, userId, accessToken = "
 };
 
 const openOutputFolder = () => {
-  const targetPath = path.resolve(projectRoot, defaultOutputPath);
+  const targetPath = defaultOutputPath;
   fs.mkdirSync(targetPath, {recursive: true});
 
   if (process.platform === "win32") {
@@ -2546,24 +2613,47 @@ const server = http.createServer(async (req, res) => {
       const tplPath = path.resolve(projectRoot, "src", tplName);
       const rootPath = path.resolve(projectRoot, "src", "Root.tsx");
       const fixedTemplate = autoFixResponsiveTemplate(tplCode);
-      const normalizedRootCode = normalizeRootCode({
+      const templateComponentName = detectPrimaryExportedComponentName(fixedTemplate.code);
+      let normalizedRootCode = normalizeRootCode({
         rootCode,
         templateName: tplName,
         compositionId,
+        templateComponentName,
       });
       const rootWasNormalized = String(rootCode).trim().length > 0
         && normalizedRootCode.trim() !== String(rootCode).trim();
+      let rootAutoRegenerated = false;
 
       const missingTemplateImports = findMissingRelativeImports(fixedTemplate.code, tplPath);
       if (missingTemplateImports.length > 0) {
         throw new Error(`Template references missing relative imports: ${missingTemplateImports.join(", ")}`);
       }
 
-      const missingRootImports = findMissingRelativeImports(
+      let missingRootImports = findMissingRelativeImports(
         normalizedRootCode,
         rootPath,
         new Set([tplPath]),
       );
+      if (missingRootImports.length > 0) {
+        const generatedRootCode = normalizeRootCode({
+          rootCode: "",
+          templateName: tplName,
+          compositionId,
+          templateComponentName,
+        });
+        const missingGeneratedRootImports = findMissingRelativeImports(
+          generatedRootCode,
+          rootPath,
+          new Set([tplPath]),
+        );
+
+        if (missingGeneratedRootImports.length === 0) {
+          normalizedRootCode = generatedRootCode;
+          rootAutoRegenerated = true;
+          missingRootImports = [];
+        }
+      }
+
       if (missingRootImports.length > 0) {
         throw new Error(`Root.tsx references missing imports: ${missingRootImports.join(", ")}`);
       }
@@ -2580,12 +2670,16 @@ const server = http.createServer(async (req, res) => {
       if (rootWasNormalized) {
         appendLog("Auto-fix: Normalized Root.tsx import paths from ./compositions/... to ./...");
       }
+      if (rootAutoRegenerated) {
+        appendLog("Auto-fix: Root.tsx import tidak cocok dengan template aktif. Root.tsx diregenerasi otomatis agar sinkron.");
+      }
 
       sendJson(res, 200, {
         success: true,
         autoFixed: fixedTemplate.autoFixed,
         notes: fixedTemplate.notes,
         rootNormalized: rootWasNormalized,
+        rootAutoRegenerated,
       });
       return;
     }

@@ -1251,8 +1251,8 @@
       const rootCodeInput = document.getElementById("root-code");
       const saveTplStatusEl = document.getElementById("save-template-status");
       const btnSaveTemplate = document.getElementById("btn-save-template");
-      const DEFAULT_TEMPLATE_NAME = "BarLineChart.tsx";
-      const DEFAULT_COMPOSITION_ID = "BarLineChart";
+      const DEFAULT_TEMPLATE_NAME = "Project.tsx";
+      const DEFAULT_COMPOSITION_ID = "Project";
 
       const runStatusEl = document.getElementById("run-status");
       const logsEl = document.getElementById("logs");
@@ -1600,6 +1600,8 @@
           completedProjectsTotal = Number.isFinite(nextTotal)
             ? nextTotal
             : projectQueue.filter((project) => project.status === "Selesai").length;
+          const totalSource = String(status.completedProjectsSource || "session");
+          metricQueueEl.title = `Sumber data: ${totalSource}`;
 
           runButton.disabled = status.running || isQueueRunning;
           stopButton.disabled = !status.running;

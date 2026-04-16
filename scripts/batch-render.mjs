@@ -4,10 +4,41 @@ import {spawn} from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
+const resolveHomeDir = () => {
+  const candidates = [
+    process.env.USERPROFILE,
+    process.env.HOME,
+    process.env.HOMEDRIVE && process.env.HOMEPATH
+      ? `${process.env.HOMEDRIVE}${process.env.HOMEPATH}`
+      : "",
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+
+  return candidates[0] || "";
+};
+
+const resolveDefaultOutputDir = () => {
+  const envOutput =
+    process.env.BATCH_UI_OUTPUT_DIR?.trim()
+    || process.env.BATCH_OUTPUT_DIR?.trim()
+    || "";
+  if (envOutput) {
+    return path.resolve(envOutput);
+  }
+
+  const homeDir = resolveHomeDir();
+  if (homeDir) {
+    return path.resolve(homeDir, "Downloads", "motion-video");
+  }
+
+  return path.resolve("out", "batch");
+};
+
 const defaultOptions = {
   input: path.join("batch", "tasks.tsk"),
-  outDir: path.join("out", "batch"),
-  composition: "BarLineChart",
+  outDir: resolveDefaultOutputDir(),
+  composition: "Project",
   resolution: "1080p",
   codec: "h264",
   frames: null,
@@ -127,12 +158,12 @@ const parseArgs = () => {
 const printHelp = () => {
   console.log(`Batch render runner for .tsk files\n
 Usage:
-  node scripts/batch-render.mjs --input batch/tasks.tsk --out out/batch
+  node scripts/batch-render.mjs --input batch/tasks.tsk --out "$HOME/Downloads/motion-video"
 
 Options:
   --input, -i         Input .tsk file (JSON format)
-  --out, -o           Output directory for rendered videos
-  --composition, -c   Remotion composition ID (default: BarLineChart)
+  --out, -o           Output directory for rendered videos (default: Downloads/motion-video)
+  --composition, -c   Remotion composition ID (default: Project)
   --resolution        Output preset: 1080p | 2k | 4k (default: 1080p)
   --codec             Render codec (default: h264)
   --frames            Optional frame range, example: 0-120
