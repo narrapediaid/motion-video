@@ -1811,6 +1811,48 @@ export const RemotionRoot: React.FC = () => {
   )}\n`;
 };
 
+const hasExpectedRootCompositionId = (rootCode, compositionName) => {
+  const normalizedCompositionName = String(compositionName || "").trim();
+  if (!normalizedCompositionName) {
+    return false;
+  }
+
+  const pattern = new RegExp(
+    `\\bid\\s*=\\s*(?:\\{\\s*["']${escapeRegExp(normalizedCompositionName)}["']\\s*\\}|["']${escapeRegExp(normalizedCompositionName)}["'])`,
+  );
+  return pattern.test(String(rootCode || ""));
+};
+
+const hasExpectedRootTemplateImport = (rootCode, templateName) => {
+  const templateBaseName = path.basename(templateName, path.extname(templateName));
+  const pattern = new RegExp(
+    `from\\s+["']\\./${escapeRegExp(templateBaseName)}["']`,
+  );
+  return pattern.test(String(rootCode || ""));
+};
+
+const shouldRegenerateRootCode = ({rootCode, templateName, compositionId}) => {
+  const normalizedRootCode = String(rootCode || "");
+  if (!normalizedRootCode.includes("<Composition")) {
+    return true;
+  }
+
+  const templateBaseName = path.basename(templateName, path.extname(templateName));
+  const normalizedCompositionName = typeof compositionId === "string" && compositionId.trim().length > 0
+    ? compositionId.trim()
+    : templateBaseName;
+
+  if (!hasExpectedRootCompositionId(normalizedRootCode, normalizedCompositionName)) {
+    return true;
+  }
+
+  if (!hasExpectedRootTemplateImport(normalizedRootCode, templateName)) {
+    return true;
+  }
+
+  return false;
+};
+
 const IMPORT_EXTENSIONS = [
   "",
   ".ts",
@@ -2714,6 +2756,7 @@ const server = http.createServer(async (req, res) => {
       const rootWasNormalized = String(rootCode).trim().length > 0
         && normalizedRootCode.trim() !== String(rootCode).trim();
       let rootAutoRegenerated = false;
+      let rootRegenerationReason = "";
 
       const missingTemplateImports = findMissingRelativeImports(fixedTemplate.code, tplPath);
       if (missingTemplateImports.length > 0) {
@@ -2748,8 +2791,27 @@ const server = http.createServer(async (req, res) => {
         if (missingGeneratedRootImports.length === 0) {
           normalizedRootCode = generatedRootCode;
           rootAutoRegenerated = true;
+          rootRegenerationReason = "missing-imports";
           missingRootImports = [];
         }
+      }
+
+      if (
+        !rootAutoRegenerated
+        && shouldRegenerateRootCode({
+          rootCode: normalizedRootCode,
+          templateName: tplName,
+          compositionId,
+        })
+      ) {
+        normalizedRootCode = normalizeRootCode({
+          rootCode: "",
+          templateName: tplName,
+          compositionId,
+          templateComponentName,
+        });
+        rootAutoRegenerated = true;
+        rootRegenerationReason = "composition-mismatch";
       }
 
       if (missingRootImports.length > 0) {
@@ -2774,7 +2836,11 @@ const server = http.createServer(async (req, res) => {
         appendLog("Auto-fix: Normalized Root.tsx import paths from ./compositions/... to ./...");
       }
       if (rootAutoRegenerated) {
-        appendLog("Auto-fix: Root.tsx import tidak cocok dengan template aktif. Root.tsx diregenerasi otomatis agar sinkron.");
+        if (rootRegenerationReason === "composition-mismatch") {
+          appendLog("Auto-fix: Root.tsx composition/import tidak sinkron dengan antrean. Root.tsx diregenerasi otomatis agar sinkron.");
+        } else {
+          appendLog("Auto-fix: Root.tsx import tidak cocok dengan template aktif. Root.tsx diregenerasi otomatis agar sinkron.");
+        }
       }
 
       sendJson(res, 200, {
