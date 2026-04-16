@@ -18,5 +18,5 @@
 
 !macro customUnInstall
   SetDetailsPrint both
-  DetailPrint "Uninstaller: Removing Motion Video Batch UI..."
+  DetailPrint "Uninstaller: Removing Narrapedia reMotion Batch..."
 !macroend

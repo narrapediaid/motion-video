@@ -1,6 +1,6 @@
 {
-  "appId": "com.motionvideo.batchui",
-  "productName": "Motion Video Batch UI",
+  "appId": "com.narrapedia.remotionbatch",
+  "productName": "Narrapedia reMotion Batch",
   "directories": {
     "output": "release"
   },
@@ -19,6 +19,7 @@
     "tsconfig.json",
     ".env.example",
     ".env.public.example",
+    ".env.public.txt",
     "!scripts/deploy-subscription-backend.bat",
     "!scripts/midtrans-sandbox-e2e.mjs",
     "!scripts/midtrans-sandbox-payload.mjs",

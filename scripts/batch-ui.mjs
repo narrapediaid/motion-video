@@ -333,7 +333,7 @@ const getSubscriptionConfig = () => {
 
     throw new HttpError(
       503,
-      `Subscription UI env is not ready. Missing: ${missing.join(", ")}. Loaded env files: ${loaded}. Checked env files: ${checked}. Supabase key source: ${supabaseApiKey.source || "(none)"} (${supabaseApiKey.kind}). For public app, put .env.public/.env.public.txt in %APPDATA%\\Motion Video Batch UI or next to the .exe, or set BATCH_UI_ENV_FILE.`,
+      `Subscription UI env is not ready. Missing: ${missing.join(", ")}. Loaded env files: ${loaded}. Checked env files: ${checked}. Supabase key source: ${supabaseApiKey.source || "(none)"} (${supabaseApiKey.kind}). For public app, put .env.public/.env.public.txt in %APPDATA%\\Narrapedia reMotion Batch or next to the .exe, or set BATCH_UI_ENV_FILE.`,
     );
   }
 
@@ -668,7 +668,7 @@ const requestRenderAuthorizationTicket = async ({
         composition: composition || null,
         resolution: resolution || null,
         limit: Number.isFinite(Number(limit)) ? Number(limit) : null,
-        userAgent: "motion-video-batch-ui-desktop",
+        userAgent: "narrapedia-remotion-batch-desktop",
       },
     });
 
@@ -3564,6 +3564,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(port, host, () => {
   const displayHost = host === "127.0.0.1" ? "localhost" : host;
-  console.log(`Batch UI running at http://${displayHost}:${port}`);
+  console.log(`Narrapedia reMotion Batch running at http://${displayHost}:${port}`);
   console.log("Press Ctrl+C to stop.");
 });

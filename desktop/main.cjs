@@ -156,7 +156,7 @@ const waitForServerReady = async ({port, timeoutMs = 25000}) => {
     await delay(250);
   }
 
-  throw new Error("Server Batch UI tidak merespons endpoint health check dalam batas waktu startup.");
+  throw new Error("Server Narrapedia reMotion Batch tidak merespons endpoint health check dalam batas waktu startup.");
 };
 
 const killServerProcess = () => {
@@ -203,6 +203,39 @@ const copyFile = (sourcePath, targetPath) => {
   fs.copyFileSync(sourcePath, targetPath);
 };
 
+const removePathSafely = (targetPath) => {
+  if (!fs.existsSync(targetPath)) {
+    return;
+  }
+
+  const stat = fs.lstatSync(targetPath);
+  if (stat.isSymbolicLink()) {
+    fs.unlinkSync(targetPath);
+    return;
+  }
+
+  fs.rmSync(targetPath, {recursive: true, force: true});
+};
+
+const ensureWritableRemotionCache = (targetNodeModules) => {
+  try {
+    const remotionCachePath = path.resolve(targetNodeModules, ".remotion");
+    fs.mkdirSync(remotionCachePath, {recursive: true});
+    const markerPath = path.resolve(remotionCachePath, ".write-test");
+    fs.writeFileSync(markerPath, "ok", "utf8");
+    fs.rmSync(markerPath, {force: true});
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const replaceNodeModulesWithCopy = ({sourceNodeModules, targetNodeModules}) => {
+  removePathSafely(targetNodeModules);
+  fs.mkdirSync(path.dirname(targetNodeModules), {recursive: true});
+  fs.cpSync(sourceNodeModules, targetNodeModules, {recursive: true, force: true});
+};
+
 const ensureNodeModulesWorkspaceLink = ({appRoot, workspaceRoot}) => {
   const sourceNodeModules = path.resolve(appRoot, "node_modules");
   const targetNodeModules = path.resolve(workspaceRoot, "node_modules");
@@ -212,6 +245,15 @@ const ensureNodeModulesWorkspaceLink = ({appRoot, workspaceRoot}) => {
   }
 
   if (fs.existsSync(targetNodeModules)) {
+    if (ensureWritableRemotionCache(targetNodeModules)) {
+      return;
+    }
+
+    log("node_modules runtime tidak writable untuk cache Remotion, migrasi ke copy lokal...");
+    replaceNodeModulesWithCopy({sourceNodeModules, targetNodeModules});
+    if (!ensureWritableRemotionCache(targetNodeModules)) {
+      throw new Error(`Tidak dapat menulis cache Remotion di ${targetNodeModules}`);
+    }
     return;
   }
 
@@ -224,7 +266,15 @@ const ensureNodeModulesWorkspaceLink = ({appRoot, workspaceRoot}) => {
   } catch (error) {
     // Fallback: copy when symlink/junction is not available in host policy.
     log(`node_modules symlink gagal, fallback copy: ${error instanceof Error ? error.message : String(error)}`);
-    fs.cpSync(sourceNodeModules, targetNodeModules, {recursive: true, force: true});
+    replaceNodeModulesWithCopy({sourceNodeModules, targetNodeModules});
+  }
+
+  if (!ensureWritableRemotionCache(targetNodeModules)) {
+    log("node_modules symlink terdeteksi read-only untuk cache Remotion, fallback copy lokal...");
+    replaceNodeModulesWithCopy({sourceNodeModules, targetNodeModules});
+    if (!ensureWritableRemotionCache(targetNodeModules)) {
+      throw new Error(`Tidak dapat menulis cache Remotion di ${targetNodeModules}`);
+    }
   }
 };
 
@@ -245,6 +295,7 @@ const ensureRuntimeWorkspace = (appRoot) => {
   copyFile(path.resolve(appRoot, "tsconfig.json"), path.resolve(workspaceRoot, "tsconfig.json"));
   copyFile(path.resolve(appRoot, ".env.example"), path.resolve(workspaceRoot, ".env.example"));
   copyFile(path.resolve(appRoot, ".env.public.example"), path.resolve(workspaceRoot, ".env.public.example"));
+  copyFile(path.resolve(appRoot, ".env.public.txt"), path.resolve(workspaceRoot, ".env.public.txt"));
 
   // Initialize mutable project assets once, then keep user edits.
   const initDirs = ["src", "batch", "public"];
@@ -405,7 +456,7 @@ const startBatchUiServer = async () => {
   if (envFile) {
     log(`Using env file: ${envFile}`);
   } else {
-    log("No .env file found for Batch UI server process.");
+    log("No .env file found for Narrapedia reMotion Batch server process.");
   }
 
   let markReadyFromLog = null;
@@ -429,7 +480,7 @@ const startBatchUiServer = async () => {
   serverProcess.stdout.on("data", (chunk) => {
     normalizeLine(chunk).forEach((line) => {
       log("server:", line);
-      if (line.includes("Batch UI running at http://") && typeof markReadyFromLog === "function") {
+      if (line.includes("Narrapedia reMotion Batch running at http://") && typeof markReadyFromLog === "function") {
         markReadyFromLog();
         markReadyFromLog = null;
       }
@@ -450,8 +501,8 @@ const startBatchUiServer = async () => {
 
     if (crashedBeforeQuit) {
       dialog.showErrorBox(
-        "Batch UI Server Berhenti",
-        "Proses server Batch UI berhenti tiba-tiba. Silakan buka log desktop untuk detail error.",
+        "Server Narrapedia reMotion Batch Berhenti",
+        "Proses server Narrapedia reMotion Batch berhenti tiba-tiba. Silakan buka log desktop untuk detail error.",
       );
     }
   });
@@ -460,7 +511,7 @@ const startBatchUiServer = async () => {
     waitForServerReady({port: serverPort}),
     readyFromLog,
   ]);
-  log(`Batch UI server ready on port ${serverPort}`);
+  log(`Narrapedia reMotion Batch server ready on port ${serverPort}`);
 };
 
 const createMainWindow = () => {
@@ -469,7 +520,7 @@ const createMainWindow = () => {
     height: 940,
     minWidth: 1180,
     minHeight: 760,
-    title: "Motion Video Batch UI",
+    title: "Narrapedia reMotion Batch",
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.resolve(__dirname, "preload.cjs"),
@@ -477,7 +528,7 @@ const createMainWindow = () => {
       sandbox: false,
       nodeIntegration: false,
       webviewTag: false,
-      devTools: true,
+      devTools: !app.isPackaged,
     },
   });
 

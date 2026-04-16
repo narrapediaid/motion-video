@@ -58,7 +58,7 @@ npm run desktop:dev
 **Public desktop env placement (packaged app)**
 
 - Letakkan file `.env.public` (atau `.env.public.txt`) di salah satu lokasi ini:
-  1) `%APPDATA%\Motion Video Batch UI\`
+  1) `%APPDATA%\Narrapedia reMotion Batch\`
   2) folder yang sama dengan file `.exe`
 - Alternatif: set `BATCH_UI_ENV_FILE` ke path absolut file env.
 - App juga menerima alias key `VITE_SUPABASE_URL` dan `VITE_SUPABASE_ANON_KEY`.
@@ -277,8 +277,8 @@ npm run desktop:build
 2. Copy hasil build ke folder distribusi:
 
 ```console
-copy release\Motion Video Batch UI-Setup-1.0.0.exe share-final\desktop-app\
-copy release\Motion Video Batch UI-Portable-1.0.0.exe share-final\desktop-app\
+copy release\Narrapedia reMotion Batch-Setup-1.0.0.exe share-final\desktop-app\
+copy release\Narrapedia reMotion Batch-Portable-1.0.0.exe share-final\desktop-app\
 ```
 
 3. Sertakan file env publik (tanpa server secret) sebagai panduan pengguna, misalnya `share-final/desktop-app/.env.public.example`.
