@@ -32,7 +32,7 @@ Enum yang dipakai sebagai kontrak lintas layanan:
 - `invoice_status`: draft, open, paid, void, uncollectible, expired.
 - `payment_status`: pending, settlement, capture, deny, cancel, expire, refund, partial_refund, chargeback, partial_chargeback, failure.
 - `device_status`: active, revoked.
-- `provider_name`: midtrans.
+- `provider_name`: `midtrans` untuk data historis dan `sakurupiah` untuk transaksi aktif baru.
 
 ## 4) Relasi Data Utama
 - `profiles.id` -> FK ke `auth.users.id` (cascade delete).

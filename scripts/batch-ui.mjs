@@ -313,11 +313,17 @@ const getSubscriptionConfig = () => {
   const supabaseApiKey = resolveSupabaseApiKey();
   const supabaseUrl = isPlaceholderLike(rawSupabaseUrl) ? "" : rawSupabaseUrl;
   const supabaseAnonKey = supabaseApiKey.value;
-  const midtransClientKey = process.env.MIDTRANS_CLIENT_KEY?.trim() || "";
-  const isMidtransProduction = parseBoolEnv(process.env.MIDTRANS_IS_PRODUCTION);
+  const isSakurupiahProduction = parseBoolEnv(process.env.SAKURUPIAH_IS_PRODUCTION);
   const backendBaseUrl = process.env.SUBSCRIPTION_BACKEND_URL?.trim() || "";
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "";
-  const midtransServerKey = process.env.MIDTRANS_SERVER_KEY?.trim() || "";
+  const sakurupiahApiId = process.env.SAKURUPIAH_API_ID?.trim() || "";
+  const sakurupiahApiKey = process.env.SAKURUPIAH_API_KEY?.trim() || "";
+  const sakurupiahCallbackUrl = process.env.SAKURUPIAH_CALLBACK_URL?.trim() || "";
+  const sakurupiahMerchantFee = String(process.env.SAKURUPIAH_MERCHANT_FEE || "1").trim() || "1";
+  const sakurupiahDefaultExpiredHours = Math.max(
+    1,
+    Math.min(168, Number.parseInt(String(process.env.SAKURUPIAH_DEFAULT_EXPIRED_HOURS || "24"), 10) || 24),
+  );
 
   const missing = [];
   if (!supabaseUrl) missing.push("SUPABASE_URL");
@@ -337,20 +343,16 @@ const getSubscriptionConfig = () => {
     );
   }
 
-  const midtransSnapUrl =
-    process.env.MIDTRANS_SNAP_URL?.trim() ||
-    (isMidtransProduction
-      ? "https://app.midtrans.com/snap/v1/transactions"
-      : "https://app.sandbox.midtrans.com/snap/v1/transactions");
-
   return {
     supabaseUrl,
     supabaseAnonKey,
     supabaseServiceRoleKey,
-    midtransServerKey,
-    midtransClientKey,
-    midtransSnapUrl,
-    isMidtransProduction,
+    sakurupiahApiId,
+    sakurupiahApiKey,
+    sakurupiahCallbackUrl,
+    sakurupiahMerchantFee,
+    sakurupiahDefaultExpiredHours,
+    isSakurupiahProduction,
     backendBaseUrl,
     supabaseApiKeySource: supabaseApiKey.source,
     supabaseApiKeyKind: supabaseApiKey.kind,
@@ -358,13 +360,15 @@ const getSubscriptionConfig = () => {
 };
 
 const hasInternalSubscriptionConfig = (config) => {
-  return Boolean(config?.supabaseServiceRoleKey && config?.midtransServerKey);
+  return Boolean(config?.supabaseServiceRoleKey && config?.sakurupiahApiId && config?.sakurupiahApiKey && config?.sakurupiahCallbackUrl);
 };
 
 const requireInternalSubscriptionConfig = (config) => {
   const missing = [];
   if (!config?.supabaseServiceRoleKey) missing.push("SUPABASE_SERVICE_ROLE_KEY");
-  if (!config?.midtransServerKey) missing.push("MIDTRANS_SERVER_KEY");
+  if (!config?.sakurupiahApiId) missing.push("SAKURUPIAH_API_ID");
+  if (!config?.sakurupiahApiKey) missing.push("SAKURUPIAH_API_KEY");
+  if (!config?.sakurupiahCallbackUrl) missing.push("SAKURUPIAH_CALLBACK_URL");
 
   if (missing.length > 0) {
     throw new HttpError(
@@ -863,165 +867,195 @@ const registerUserWithServiceRole = async ({config, email, password, fullName}) 
   return data;
 };
 
-const createMidtransTransaction = async ({config, payload}) => {
-  const basicAuth = Buffer.from(`${config.midtransServerKey}:`).toString("base64");
+const normalizeSakurupiahBaseUrl = (config) => (
+  config.isSakurupiahProduction ? "https://sakurupiah.id/api" : "https://sakurupiah.id/api-sanbox"
+);
 
-  const response = await fetch(config.midtransSnapUrl, {
+const normalizeSakurupiahPhone = (value) => {
+  const phone = String(value || "").replace(/[\s\-()+.]/g, "").trim();
+  if (!/^(?:0|62|60)\d{7,15}$/.test(phone)) {
+    throw new HttpError(400, "Nomor HP wajib diisi dengan format Indonesia/Malaysia, contoh 08xxx atau 62xxx.");
+  }
+  return phone;
+};
+
+const normalizeSakurupiahPaymentMethod = (value) => {
+  const method = String(value || "").trim();
+  if (!/^[A-Za-z0-9_-]{2,32}$/.test(method)) {
+    throw new HttpError(400, "paymentMethod Sakurupiah tidak valid.");
+  }
+  return method;
+};
+
+const firstSakurupiahData = (data) => {
+  const rows = data?.data;
+  if (Array.isArray(rows) && rows[0] && typeof rows[0] === "object") return rows[0];
+  return {};
+};
+
+const signSakurupiahInvoice = ({config, paymentMethod, orderId, amountIdr}) => {
+  return crypto
+    .createHmac("sha256", config.sakurupiahApiKey)
+    .update(`${config.sakurupiahApiId}${paymentMethod}${orderId}${Math.round(amountIdr)}`)
+    .digest("hex");
+};
+
+const sakurupiahPostForm = async ({config, endpoint, fields}) => {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(fields)) {
+    if (Array.isArray(value)) {
+      value.forEach((entry) => params.append(key, String(entry ?? "")));
+    } else if (value !== undefined && value !== null) {
+      params.set(key, String(value));
+    }
+  }
+
+  const response = await fetch(`${normalizeSakurupiahBaseUrl(config)}/${endpoint}`, {
     method: "POST",
     headers: {
       Accept: "application/json",
-      "Content-Type": "application/json",
-      Authorization: `Basic ${basicAuth}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Bearer ${config.sakurupiahApiKey}`,
     },
-    body: JSON.stringify(payload),
+    body: params.toString(),
   });
 
   const data = await parseJsonResponse(response);
-
-  if (!response.ok) {
-    throw new HttpError(
-      502,
-      `Midtrans checkout request failed (${response.status}): ${JSON.stringify(data)}`,
-    );
+  if (!response.ok || String(data?.status || "") !== "200") {
+    throw new HttpError(502, `Sakurupiah request failed (${response.status}) on ${endpoint}: ${JSON.stringify(data)}`);
   }
-
-  if (!data?.redirect_url || !data?.token) {
-    throw new HttpError(502, `Midtrans response is missing redirect_url/token: ${JSON.stringify(data)}`);
-  }
-
   return data;
 };
 
-const verifyMidtransPayment = async ({config, orderId}) => {
-  const candidates = config.isMidtransProduction
-    ? [
-      {label: "production", baseUrl: "https://api.midtrans.com/v2"},
-      {label: "sandbox", baseUrl: "https://api.sandbox.midtrans.com/v2"},
-    ]
-    : [
-      {label: "sandbox", baseUrl: "https://api.sandbox.midtrans.com/v2"},
-      {label: "production", baseUrl: "https://api.midtrans.com/v2"},
-    ];
+const listSakurupiahPaymentChannels = async ({config}) => {
+  const data = await sakurupiahPostForm({
+    config,
+    endpoint: "list-payment.php",
+    fields: {
+      api_id: config.sakurupiahApiId,
+      method: "list",
+    },
+  });
 
-  const basicAuth = Buffer.from(`${config.midtransServerKey}:`).toString("base64");
-  let notFoundIn = [];
+  const channels = Array.isArray(data?.data)
+    ? data.data.map((channel) => ({
+      code: String(channel?.kode || "").trim(),
+      name: String(channel?.nama || channel?.kode || "").trim(),
+      type: String(channel?.tipe || "").trim(),
+      min: Number(channel?.minimal || 0),
+      max: Number(channel?.maksimal || 0),
+      fee: String(channel?.biaya || ""),
+      feeType: String(channel?.percent || ""),
+      status: String(channel?.status || ""),
+      logo: String(channel?.logo || ""),
+    })).filter((channel) => channel.code)
+    : [];
 
-  for (const candidate of candidates) {
-    const response = await fetch(`${candidate.baseUrl}/${orderId}/status`, {
-      headers: {
-        Accept: "application/json",
-        Authorization: `Basic ${basicAuth}`,
-      },
-    });
-
-    if (response.status === 404) {
-      notFoundIn = [...notFoundIn, candidate.label];
-      continue;
-    }
-
-    const data = await parseJsonResponse(response);
-    if (!response.ok) {
-      throw new HttpError(
-        502,
-        `Midtrans status request failed on ${candidate.label} (${response.status}): ${JSON.stringify(data)}`,
-      );
-    }
-
-    return {
-      data,
-      source: candidate.label,
-    };
-  }
-
-  if (notFoundIn.length > 0) {
-    return null;
-  }
-
-  return null;
+  return channels;
 };
 
-const processMidtransNotification = async ({config, notification}) => {
-  const orderId = notification.order_id;
-  const statusCode = notification.status_code;
-  const transactionStatus = notification.transaction_status;
-  const fraudStatus = notification.fraud_status;
-  const grossAmount = notification.gross_amount;
-  const normalizedTxStatus = String(transactionStatus || "pending").toLowerCase();
-  const normalizedFraudStatus = String(fraudStatus || "accept").toLowerCase();
+const createSakurupiahInvoice = async ({
+  config,
+  orderId,
+  paymentMethod,
+  customerName,
+  customerEmail,
+  customerPhone,
+  amountIdr,
+  plan,
+  returnUrl,
+}) => {
+  const amount = Math.round(amountIdr);
+  const signature = signSakurupiahInvoice({config, paymentMethod, orderId, amountIdr: amount});
+  const data = await sakurupiahPostForm({
+    config,
+    endpoint: "create.php",
+    fields: {
+      api_id: config.sakurupiahApiId,
+      method: paymentMethod,
+      name: customerName || "Customer",
+      email: customerEmail || "",
+      phone: customerPhone,
+      amount,
+      merchant_fee: config.sakurupiahMerchantFee,
+      merchant_ref: orderId,
+      expired: config.sakurupiahDefaultExpiredHours,
+      "produk[]": [String(plan?.name || plan?.code || "Subscription")],
+      "qty[]": [1],
+      "harga[]": [amount],
+      "size[]": [String(plan?.tier || "subscription")],
+      "note[]": [`Plan ${String(plan?.code || plan?.id || "")}`],
+      callback_url: config.sakurupiahCallbackUrl,
+      return_url: returnUrl,
+      signature,
+    },
+  });
 
-  // Verify signature if provided instead of trust blindly
-  if (notification.signature_key) {
-    const expectedSig = crypto
-      .createHash("sha512")
-      .update(orderId + statusCode + grossAmount + config.midtransServerKey)
-      .digest("hex");
-    if (expectedSig !== notification.signature_key) {
-      throw new HttpError(403, "Invalid signature key");
-    }
+  const invoice = firstSakurupiahData(data);
+  if (!invoice?.checkout_url || !invoice?.trx_id) {
+    throw new HttpError(502, `Sakurupiah response is missing checkout_url/trx_id: ${JSON.stringify(data)}`);
+  }
+
+  return {response: data, invoice};
+};
+
+const checkSakurupiahStatus = async ({config, trxId}) => {
+  return await sakurupiahPostForm({
+    config,
+    endpoint: "status-transaction.php",
+    fields: {
+      api_id: config.sakurupiahApiId,
+      method: "status",
+      trx_id: trxId,
+    },
+  });
+};
+
+const processSakurupiahNotification = async ({config, notification}) => {
+  const orderId = String(notification?.merchant_ref || "").trim();
+  const externalTransactionId = String(notification?.trx_id || "").trim();
+  const status = String(notification?.status || "pending").toLowerCase();
+  const rawStatusCode = Number(notification?.status_kode);
+  const statusCode = Number.isFinite(rawStatusCode)
+    ? rawStatusCode
+    : status === "berhasil"
+      ? 1
+      : status === "expired"
+        ? 2
+        : 0;
+
+  if (!orderId || !externalTransactionId) {
+    throw new HttpError(400, "merchant_ref dan trx_id Sakurupiah wajib tersedia.");
   }
 
   const invoices = await supabaseAdminRequest({
     config,
-    endpointPath: `/rest/v1/invoices?external_order_id=eq.${encodeURIComponent(orderId)}&select=id,status,user_id,membership_id,amount_idr`,
+    endpointPath: `/rest/v1/invoices?external_order_id=eq.${encodeURIComponent(orderId)}&select=id,status,user_id,membership_id,amount_idr,raw_payload`,
   });
   const invoice = Array.isArray(invoices) ? invoices[0] : null;
   if (!invoice) return {message: "Invoice not found", orderId};
 
-  let nextStatus = invoice.status;
-  let isPaid = false;
-  let paymentStatus = "failure";
-
-  if (normalizedTxStatus === "capture") {
-    paymentStatus = normalizedFraudStatus === "challenge" ? "pending" : "capture";
-    if (normalizedFraudStatus === "challenge") {
-      nextStatus = "open";
-    } else {
-      nextStatus = "paid";
-      isPaid = true;
-    }
-  } else if (normalizedTxStatus === "settlement") {
-    paymentStatus = "settlement";
-    nextStatus = "paid";
-    isPaid = true;
-  } else if (normalizedTxStatus === "pending") {
-    paymentStatus = "pending";
-    nextStatus = "open";
-  } else if (
-    [
-      "deny",
-      "cancel",
-      "expire",
-      "refund",
-      "partial_refund",
-      "chargeback",
-      "partial_chargeback",
-      "failure",
-    ].includes(normalizedTxStatus)
-  ) {
-    paymentStatus = normalizedTxStatus;
-    nextStatus = ["refund", "partial_refund", "chargeback", "partial_chargeback"].includes(
-      normalizedTxStatus,
-    )
-      ? "uncollectible"
-      : "expired";
-  }
-
+  const isPaid = status === "berhasil" || statusCode === 1;
+  const isExpired = status === "expired" || statusCode === 2;
+  const nextStatus = isPaid ? "paid" : isExpired ? "expired" : "open";
+  const paymentStatus = isPaid ? "settlement" : isExpired ? "expire" : "pending";
   const invoiceStatusChanged = invoice.status !== nextStatus;
-  if (invoiceStatusChanged) {
-    const patchInvoice = {
+
+  await supabaseAdminRequest({
+    config,
+    endpointPath: `/rest/v1/invoices?id=eq.${encodeURIComponent(invoice.id)}`,
+    method: "PATCH",
+    body: {
       status: nextStatus,
+      paid_at: isPaid ? new Date().toISOString() : invoice.raw_payload?.paid_at || undefined,
+      expires_at: isExpired ? new Date().toISOString() : undefined,
+      raw_payload: {
+        ...(invoice.raw_payload || {}),
+        sakurupiah_callback: notification,
+      },
       updated_at: new Date().toISOString(),
-    };
-
-    if (isPaid) patchInvoice.paid_at = notification.settlement_time || new Date().toISOString();
-
-    await supabaseAdminRequest({
-      config,
-      endpointPath: `/rest/v1/invoices?id=eq.${encodeURIComponent(invoice.id)}`,
-      method: "PATCH",
-      body: patchInvoice,
-    });
-  }
+    },
+  });
 
   try {
     await syncVoucherRedemptionStatusForInvoice({
@@ -1040,7 +1074,7 @@ const processMidtransNotification = async ({config, notification}) => {
       endpointPath: `/rest/v1/memberships?id=eq.${encodeURIComponent(invoice.membership_id)}&select=id,plan_id,status,ends_at`,
     });
     const membership = Array.isArray(memberships) ? memberships[0] : null;
-    
+
     if (membership) {
       const plans = await supabaseAdminRequest({
         config,
@@ -1056,7 +1090,6 @@ const processMidtransNotification = async ({config, notification}) => {
           : 1;
       const isLifetimePlan = tier === "lifetime" || months === 0;
       const normalizedMembershipStatus = String(membership.status || "").toLowerCase();
-
       const shouldPatchMembership = isLifetimePlan
         ? normalizedMembershipStatus !== "lifetime_active"
         : normalizedMembershipStatus !== "active" || !membership.ends_at;
@@ -1086,41 +1119,38 @@ const processMidtransNotification = async ({config, notification}) => {
         });
       }
     }
-  }
-
-  const externalTransactionId =
-    typeof notification.transaction_id === "string" ? notification.transaction_id.trim() : "";
-
-  let existPayments = [];
-  if (externalTransactionId) {
-    existPayments = await supabaseAdminRequest({
+  } else if (isExpired && invoice.membership_id) {
+    await supabaseAdminRequest({
       config,
-      endpointPath: `/rest/v1/payments?external_transaction_id=eq.${encodeURIComponent(externalTransactionId)}&select=id`,
-    });
-  } else {
-    existPayments = await supabaseAdminRequest({
-      config,
-      endpointPath: `/rest/v1/payments?invoice_id=eq.${encodeURIComponent(invoice.id)}&provider=eq.midtrans&order=created_at.desc&limit=1&select=id`,
+      endpointPath: `/rest/v1/memberships?id=eq.${encodeURIComponent(invoice.membership_id)}&status=eq.pending_payment`,
+      method: "PATCH",
+      body: {
+        status: "expired",
+        ends_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
     });
   }
 
-  const parsedGrossAmount = Number(grossAmount);
-  const grossAmountIdr = Number.isFinite(parsedGrossAmount)
-    ? Math.round(parsedGrossAmount)
-    : Number(invoice.amount_idr || 0);
+  const existPayments = await supabaseAdminRequest({
+    config,
+    endpointPath: `/rest/v1/payments?external_transaction_id=eq.${encodeURIComponent(externalTransactionId)}&select=id`,
+  });
 
+  const parsedAmount = Number(notification?.amount ?? notification?.total);
+  const grossAmountIdr = Number.isFinite(parsedAmount) ? Math.round(parsedAmount) : Number(invoice.amount_idr || 0);
   const pData = {
     user_id: invoice.user_id,
     invoice_id: invoice.id,
-    provider: "midtrans",
-    external_transaction_id: externalTransactionId || null,
+    provider: "sakurupiah",
+    external_transaction_id: externalTransactionId,
     status: paymentStatus,
-    payment_method: notification.payment_type || null,
-    payment_channel: notification.store || notification.channel_response_code || notification.payment_type || null,
+    payment_method: notification.payment_kode || notification.method || null,
+    payment_channel: notification.via || notification.payment_kode || notification.method || null,
     gross_amount_idr: grossAmountIdr,
     transaction_time: notification.transaction_time || new Date().toISOString(),
     settlement_time: notification.settlement_time || (isPaid ? new Date().toISOString() : null),
-    fraud_status: notification.fraud_status || null,
+    fraud_status: null,
     raw_payload: notification,
   };
 
@@ -1135,7 +1165,7 @@ const processMidtransNotification = async ({config, notification}) => {
   } else {
     await supabaseAdminRequest({
       config,
-      endpointPath: `/rest/v1/payments`,
+      endpointPath: "/rest/v1/payments",
       method: "POST",
       prefer: "return=minimal",
       body: pData,
@@ -1145,6 +1175,7 @@ const processMidtransNotification = async ({config, notification}) => {
   return {
     message: invoiceStatusChanged ? "Processed payment state update" : "Payment synced without invoice change",
     orderId,
+    transactionId: externalTransactionId,
     invoiceStatus: nextStatus,
     paymentStatus,
   };
@@ -1737,37 +1768,125 @@ const toComponentIdentifier = (value) => {
   return identifier;
 };
 
-const detectPrimaryExportedComponentName = (templateCode) => {
-  const source = String(templateCode || "");
-  const patterns = [
-    /export\s+const\s+([A-Za-z_$][\w$]*)\s*[:=]/m,
-    /export\s+function\s+([A-Za-z_$][\w$]*)\s*\(/m,
-    /export\s+class\s+([A-Za-z_$][\w$]*)\s+/m,
-  ];
+const DEFAULT_ROOT_DURATION_IN_FRAMES = 210;
+const DEFAULT_ROOT_FPS = 60;
 
-  for (const pattern of patterns) {
-    const match = source.match(pattern);
-    const candidate = match?.[1] ? String(match[1]).trim() : "";
+const extractNumericPropFromRoot = (rootCode, propName) => {
+  const source = String(rootCode || "");
+  const bracePattern = new RegExp(`${escapeRegExp(propName)}\\s*=\\s*\\{\\s*(\\d+(?:\\.\\d+)?)\\s*\\}`);
+  const quotePattern = new RegExp(`${escapeRegExp(propName)}\\s*=\\s*["'](\\d+(?:\\.\\d+)?)["']`);
+  const directPattern = new RegExp(`${escapeRegExp(propName)}\\s*=\\s*(\\d+(?:\\.\\d+)?)`);
+  const match = source.match(bracePattern) || source.match(quotePattern) || source.match(directPattern);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const parsed = Number(match[1]);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
+};
+
+const extractRootTiming = (rootCode) => {
+  const durationInFrames = extractNumericPropFromRoot(rootCode, "durationInFrames");
+  const fps = extractNumericPropFromRoot(rootCode, "fps");
+  if (durationInFrames === null && fps === null) {
+    return null;
+  }
+
+  return {
+    durationInFrames,
+    fps,
+  };
+};
+
+const resolveRootTiming = (rootCode, preferredTiming = null) => {
+  const extracted = extractRootTiming(rootCode);
+  const preferredDuration = Number.isFinite(preferredTiming?.durationInFrames) && preferredTiming.durationInFrames > 0
+    ? preferredTiming.durationInFrames
+    : null;
+  const preferredFps = Number.isFinite(preferredTiming?.fps) && preferredTiming.fps > 0
+    ? preferredTiming.fps
+    : null;
+
+  const durationInFrames = preferredDuration
+    ?? (Number.isFinite(extracted?.durationInFrames) ? extracted.durationInFrames : null)
+    ?? DEFAULT_ROOT_DURATION_IN_FRAMES;
+  const fps = preferredFps
+    ?? (Number.isFinite(extracted?.fps) ? extracted.fps : null)
+    ?? DEFAULT_ROOT_FPS;
+
+  return {
+    durationInFrames: Math.round(durationInFrames),
+    fps: Math.round(fps),
+  };
+};
+
+const detectTemplateComponentExport = (templateCode, templateName = "Project.tsx") => {
+  const source = String(templateCode || "");
+  const templateBaseName = path.basename(templateName, path.extname(templateName));
+  const fallbackComponentName = toComponentIdentifier(templateBaseName);
+  const namedExportPattern = /export\s+(?:const|function|class)\s+([A-Za-z_$][\w$]*)/g;
+  const namedCandidates = [];
+  let namedMatch;
+  while ((namedMatch = namedExportPattern.exec(source)) !== null) {
+    const candidate = namedMatch?.[1] ? String(namedMatch[1]).trim() : "";
     if (candidate) {
-      return candidate;
+      namedCandidates.push(candidate);
     }
   }
 
-  return "";
+  // React components must be uppercase identifiers in JSX, so prefer those.
+  const componentLikeCandidates = namedCandidates.filter((name) => /^[A-Z]/.test(name));
+  if (componentLikeCandidates.length > 0) {
+    const exactTemplateMatch = componentLikeCandidates.find((name) => name === fallbackComponentName);
+    return {
+      componentName: exactTemplateMatch || componentLikeCandidates[0],
+      importMode: "named",
+    };
+  }
+
+  if (/export\s+default\b/m.test(source)) {
+    return {
+      componentName: fallbackComponentName,
+      importMode: "default",
+    };
+  }
+
+  return {
+    componentName: fallbackComponentName,
+    importMode: "named",
+  };
 };
 
-const normalizeRootCode = ({rootCode, templateName, compositionId, templateComponentName = ""}) => {
+const normalizeRootCode = ({
+  rootCode,
+  templateName,
+  compositionId,
+  templateComponent = null,
+  preferredTiming = null,
+}) => {
   const templateBaseName = path.basename(templateName, path.extname(templateName));
-  const componentName = templateComponentName
-    ? toComponentIdentifier(templateComponentName)
+  const rawComponentName = typeof templateComponent?.componentName === "string"
+    ? templateComponent.componentName
+    : "";
+  const componentName = rawComponentName && /^[A-Za-z_$][\w$]*$/.test(rawComponentName)
+    ? rawComponentName
     : toComponentIdentifier(templateBaseName);
+  const importMode = templateComponent?.importMode === "default" ? "default" : "named";
+  const templateImportStatement = importMode === "default"
+    ? `import ${componentName} from "./${templateBaseName}";`
+    : `import {${componentName}} from "./${templateBaseName}";`;
   const compositionName = typeof compositionId === "string" && compositionId.trim().length > 0
     ? compositionId.trim()
     : templateBaseName;
+  const timing = resolveRootTiming(rootCode, preferredTiming);
 
   const generatedRootCode = `import React from "react";
 import {Composition} from "remotion";
-import {${componentName}} from "./${templateBaseName}";
+${templateImportStatement}
 
 export const RemotionRoot: React.FC = () => {
   return (
@@ -1775,8 +1894,8 @@ export const RemotionRoot: React.FC = () => {
       <Composition
         id="${compositionName}"
         component={${componentName}}
-        durationInFrames={210}
-        fps={60}
+        durationInFrames={${timing.durationInFrames}}
+        fps={${timing.fps}}
         width={1920}
         height={1080}
         defaultProps={{}}
@@ -1823,15 +1942,31 @@ const hasExpectedRootCompositionId = (rootCode, compositionName) => {
   return pattern.test(String(rootCode || ""));
 };
 
-const hasExpectedRootTemplateImport = (rootCode, templateName) => {
+const hasExpectedRootTemplateImport = (rootCode, templateName, templateComponent = null) => {
   const templateBaseName = path.basename(templateName, path.extname(templateName));
+  const source = String(rootCode || "");
+  const importMode = templateComponent?.importMode === "default" ? "default" : "named";
+  const importSourcePattern = `["']\\./${escapeRegExp(templateBaseName)}["']`;
+  if (importMode === "default") {
+    const pattern = new RegExp(
+      `import\\s+[A-Za-z_$][\\w$]*\\s+from\\s+${importSourcePattern}`,
+    );
+    return pattern.test(source);
+  }
+
+  const rawComponentName = typeof templateComponent?.componentName === "string"
+    ? templateComponent.componentName
+    : "";
+  const componentName = rawComponentName && /^[A-Za-z_$][\w$]*$/.test(rawComponentName)
+    ? rawComponentName
+    : toComponentIdentifier(templateBaseName);
   const pattern = new RegExp(
-    `from\\s+["']\\./${escapeRegExp(templateBaseName)}["']`,
+    `import\\s*\\{[^}]*\\b${escapeRegExp(componentName)}\\b[^}]*\\}\\s*from\\s+${importSourcePattern}`,
   );
-  return pattern.test(String(rootCode || ""));
+  return pattern.test(source);
 };
 
-const shouldRegenerateRootCode = ({rootCode, templateName, compositionId}) => {
+const shouldRegenerateRootCode = ({rootCode, templateName, compositionId, templateComponent = null}) => {
   const normalizedRootCode = String(rootCode || "");
   if (!normalizedRootCode.includes("<Composition")) {
     return true;
@@ -1846,7 +1981,7 @@ const shouldRegenerateRootCode = ({rootCode, templateName, compositionId}) => {
     return true;
   }
 
-  if (!hasExpectedRootTemplateImport(normalizedRootCode, templateName)) {
+  if (!hasExpectedRootTemplateImport(normalizedRootCode, templateName, templateComponent)) {
     return true;
   }
 
@@ -2746,12 +2881,12 @@ const server = http.createServer(async (req, res) => {
       const rootPath = path.resolve(projectRoot, "src", "Root.tsx");
       const fixedTemplate = autoFixResponsiveTemplate(tplCode);
       const assetScan = ensureTemplateLocalhostAssets(fixedTemplate.code);
-      const templateComponentName = detectPrimaryExportedComponentName(fixedTemplate.code);
+      const templateComponent = detectTemplateComponentExport(fixedTemplate.code, tplName);
       let normalizedRootCode = normalizeRootCode({
         rootCode,
         templateName: tplName,
         compositionId,
-        templateComponentName,
+        templateComponent,
       });
       const rootWasNormalized = String(rootCode).trim().length > 0
         && normalizedRootCode.trim() !== String(rootCode).trim();
@@ -2776,11 +2911,13 @@ const server = http.createServer(async (req, res) => {
         new Set([tplPath]),
       );
       if (missingRootImports.length > 0) {
+        const preservedTiming = resolveRootTiming(normalizedRootCode);
         const generatedRootCode = normalizeRootCode({
           rootCode: "",
           templateName: tplName,
           compositionId,
-          templateComponentName,
+          templateComponent,
+          preferredTiming: preservedTiming,
         });
         const missingGeneratedRootImports = findMissingRelativeImports(
           generatedRootCode,
@@ -2802,13 +2939,16 @@ const server = http.createServer(async (req, res) => {
           rootCode: normalizedRootCode,
           templateName: tplName,
           compositionId,
+          templateComponent,
         })
       ) {
+        const preservedTiming = resolveRootTiming(normalizedRootCode);
         normalizedRootCode = normalizeRootCode({
           rootCode: "",
           templateName: tplName,
           compositionId,
-          templateComponentName,
+          templateComponent,
+          preferredTiming: preservedTiming,
         });
         rootAutoRegenerated = true;
         rootRegenerationReason = "composition-mismatch";
@@ -2985,8 +3125,8 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, {
         supabaseUrl: config.supabaseUrl,
         supabaseAnonKey: config.supabaseAnonKey,
-        midtransMode: config.isMidtransProduction ? "production" : "sandbox",
-        midtransClientKey: config.midtransClientKey,
+        paymentProvider: "sakurupiah",
+        sakurupiahMode: config.isSakurupiahProduction ? "production" : "sandbox",
         publicMode: !hasInternalSubscriptionConfig(config),
         backendConfigured: Boolean(config.backendBaseUrl),
       });
@@ -3119,6 +3259,46 @@ const server = http.createServer(async (req, res) => {
           "Set-Cookie": "sb_access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
         },
       );
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/subscription/payment-channels") {
+      const config = getSubscriptionConfig();
+      const fallbackChannels = [
+        {code: "QRIS", name: "QRIS", type: "DIRECT", min: 500, max: 2000000, fee: "0.7", feeType: "Percent", status: "Aktif"},
+        {code: "BCAVA", name: "BCA Virtual Account", type: "DIRECT", min: 10000, max: 15000000, fee: "4900", feeType: "Nominal", status: "Aktif"},
+        {code: "BRIVA", name: "BRI Virtual Account", type: "DIRECT", min: 10000, max: 10000000, fee: "3500", feeType: "Nominal", status: "Aktif"},
+      ];
+
+      if (!hasInternalSubscriptionConfig(config)) {
+        if (config.backendBaseUrl) {
+          try {
+            const result = await forwardSubscriptionRequest({
+              config,
+              req,
+              endpointPath: "/payment-channels",
+              method: "GET",
+            });
+            sendJson(res, 200, result);
+            return;
+          } catch (error) {
+            console.error("Failed to fetch Sakurupiah channels from backend:", error instanceof Error ? error.message : String(error));
+          }
+        }
+
+        sendJson(res, 200, {
+          channels: fallbackChannels,
+          source: config.backendBaseUrl ? "fallback-public-backend" : "fallback-public",
+        });
+        return;
+      }
+
+      const internalConfig = requireInternalSubscriptionConfig(config);
+      const channels = await listSakurupiahPaymentChannels({config: internalConfig});
+      sendJson(res, 200, {
+        channels: channels.length ? channels : fallbackChannels,
+        source: channels.length ? "sakurupiah" : "fallback",
+      });
       return;
     }
 
@@ -3325,6 +3505,11 @@ const server = http.createServer(async (req, res) => {
 
       const planId = typeof body?.planId === "string" ? body.planId.trim() : "";
       const voucherCode = typeof body?.voucherCode === "string" ? body.voucherCode : "";
+      const paymentMethod = normalizeSakurupiahPaymentMethod(body?.paymentMethod);
+      const customerPhone = normalizeSakurupiahPhone(body?.customerPhone);
+      const returnUrl = typeof body?.returnUrl === "string" && /^https?:\/\//i.test(body.returnUrl)
+        ? body.returnUrl.trim()
+        : `http://${req.headers.host || `${host}:${port}`}/subscription`;
       if (!planId) {
         throw new HttpError(400, "planId is required");
       }
@@ -3349,7 +3534,7 @@ const server = http.createServer(async (req, res) => {
           user_id: user.id,
           plan_id: plan.id,
           status: "pending_payment",
-          source: "midtrans",
+          source: "sakurupiah",
         },
       ];
 
@@ -3376,7 +3561,7 @@ const server = http.createServer(async (req, res) => {
           {
             user_id: user.id,
             membership_id: membership.id,
-            provider: "midtrans",
+            provider: "sakurupiah",
             external_order_id: orderId,
             currency: "IDR",
             amount_idr: payableAmount,
@@ -3385,6 +3570,11 @@ const server = http.createServer(async (req, res) => {
               source: "subscription-ui",
               plan_id: plan.id,
               plan_code: plan.code,
+              sakurupiah: {
+                payment_method: paymentMethod,
+                callback_url: internalConfig.sakurupiahCallbackUrl,
+                return_url: returnUrl,
+              },
               voucher: checkoutVoucher
                 ? {
                   id: checkoutVoucher.voucher.id,
@@ -3437,32 +3627,18 @@ const server = http.createServer(async (req, res) => {
         user.email?.split("@")[0] ||
         "Customer";
 
-      let midtransResponse;
+      let sakurupiahResponse;
       try {
-        midtransResponse = await createMidtransTransaction({
+        sakurupiahResponse = await createSakurupiahInvoice({
           config: internalConfig,
-          payload: {
-            transaction_details: {
-              order_id: orderId,
-              gross_amount: payableAmount,
-            },
-            customer_details: {
-              first_name: displayName,
-              email: user.email,
-            },
-            item_details: [
-              {
-                id: checkoutVoucher ? `${plan.code}-discounted` : plan.code,
-                name: checkoutVoucher ? `${plan.name} + Voucher` : plan.name,
-                price: payableAmount,
-                quantity: 1,
-              },
-            ],
-            custom_expiry: {
-              expiry_duration: 60,
-              unit: "minute",
-            },
-          },
+          orderId,
+          paymentMethod,
+          customerName: displayName,
+          customerEmail: user.email,
+          customerPhone,
+          amountIdr: payableAmount,
+          plan,
+          returnUrl,
         });
       } catch (error) {
         await supabaseAdminRequest({
@@ -3472,7 +3648,7 @@ const server = http.createServer(async (req, res) => {
           body: {
             raw_payload: {
               source: "subscription-ui",
-              midtrans_error: error instanceof Error ? error.message : String(error),
+              sakurupiah_error: error instanceof Error ? error.message : String(error),
             },
           },
         });
@@ -3488,6 +3664,18 @@ const server = http.createServer(async (req, res) => {
             source: "subscription-ui",
             plan_id: plan.id,
             plan_code: plan.code,
+            sakurupiah: {
+              payment_method: paymentMethod,
+              trx_id: String(sakurupiahResponse.invoice.trx_id || ""),
+              checkout_url: String(sakurupiahResponse.invoice.checkout_url || ""),
+              payment_no: sakurupiahResponse.invoice.payment_no ?? null,
+              qr: sakurupiahResponse.invoice.qr ?? null,
+              via: sakurupiahResponse.invoice.via ?? null,
+              payment_kode: sakurupiahResponse.invoice.payment_kode ?? paymentMethod,
+              callback_url: internalConfig.sakurupiahCallbackUrl,
+              return_url: returnUrl,
+              response: sakurupiahResponse.response,
+            },
             voucher: checkoutVoucher
               ? {
                 id: checkoutVoucher.voucher.id,
@@ -3499,7 +3687,6 @@ const server = http.createServer(async (req, res) => {
                 final_amount_idr: checkoutVoucher.finalAmountIdr,
               }
               : null,
-            midtrans: midtransResponse,
           },
         },
       });
@@ -3508,8 +3695,12 @@ const server = http.createServer(async (req, res) => {
         orderId,
         invoiceId: invoice.id,
         membershipId: membership.id,
-        token: midtransResponse.token,
-        redirectUrl: midtransResponse.redirect_url,
+        trxId: String(sakurupiahResponse.invoice.trx_id || ""),
+        checkoutUrl: String(sakurupiahResponse.invoice.checkout_url || ""),
+        redirectUrl: String(sakurupiahResponse.invoice.checkout_url || ""),
+        paymentNo: sakurupiahResponse.invoice.payment_no ?? null,
+        qr: sakurupiahResponse.invoice.qr ?? null,
+        paymentMethod,
         voucher: checkoutVoucher
           ? {
             code: checkoutVoucher.voucherCode,
@@ -3525,9 +3716,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/subscription/webhook") {
       const config = getSubscriptionConfig();
       const internalEnabled = hasInternalSubscriptionConfig(config);
+      const rawBody = await readRequestBody(req);
 
       if (!internalEnabled && config.backendBaseUrl) {
-        const payload = JSON.parse(await readRequestBody(req));
+        const payload = JSON.parse(rawBody);
         const result = await forwardSubscriptionRequest({
           config,
           req,
@@ -3539,15 +3731,36 @@ const server = http.createServer(async (req, res) => {
       }
 
       const internalConfig = requireInternalSubscriptionConfig(config);
+      const callbackEvent = String(req.headers["x-callback-event"] || "").trim();
+      if (callbackEvent !== "payment_status") {
+        throw new HttpError(400, `Unrecognized callback event: ${callbackEvent || "(empty)"}`);
+      }
+
+      const incomingSignature = String(req.headers["x-callback-signature"] || "").trim().toLowerCase();
+      const expectedSignature = crypto
+        .createHmac("sha256", internalConfig.sakurupiahApiKey)
+        .update(rawBody)
+        .digest("hex");
+
+      if (!incomingSignature || incomingSignature.length !== expectedSignature.length) {
+        throw new HttpError(401, "Invalid Sakurupiah callback signature");
+      }
+
+      const incomingBuffer = Buffer.from(incomingSignature);
+      const expectedBuffer = Buffer.from(expectedSignature);
+      if (!crypto.timingSafeEqual(incomingBuffer, expectedBuffer)) {
+        throw new HttpError(401, "Invalid Sakurupiah callback signature");
+      }
+
       let payload;
       try {
-        payload = JSON.parse(await readRequestBody(req));
+        payload = JSON.parse(rawBody);
       } catch {
         throw new HttpError(400, "Invalid JSON payload");
       }
 
-      console.log(`[Webhook] Midtrans notification for ${payload.order_id}`);
-      const result = await processMidtransNotification({config: internalConfig, notification: payload});
+      console.log(`[Webhook] Sakurupiah notification for ${payload.merchant_ref}`);
+      const result = await processSakurupiahNotification({config: internalConfig, notification: payload});
       sendJson(res, 200, result);
       return;
     }
@@ -3585,14 +3798,14 @@ const server = http.createServer(async (req, res) => {
       await authenticateUserFromRequest(req, internalConfig); // Ensure caller is authenticated
       
       const directNotification = payload?.notification;
-      if (directNotification && typeof directNotification === "object" && directNotification.order_id) {
-        const result = await processMidtransNotification({
+      if (directNotification && typeof directNotification === "object" && directNotification.merchant_ref) {
+        const result = await processSakurupiahNotification({
           config: internalConfig,
           notification: directNotification,
         });
         sendJson(res, 200, {
           ...result,
-          source: "snap-callback",
+          source: "direct-notification",
         });
         return;
       }
@@ -3602,18 +3815,38 @@ const server = http.createServer(async (req, res) => {
       }
 
       console.log(`[Verify] Manual verification requested for ${payload.order_id}`);
-      const verification = await verifyMidtransPayment({config: internalConfig, orderId: payload.order_id});
-      if (!verification?.data) {
-        throw new HttpError(
-          404,
-          "Transaction not found in Midtrans status API (cek MIDTRANS_IS_PRODUCTION dan server key).",
-        );
+      const invoices = await supabaseAdminRequest({
+        config: internalConfig,
+        endpointPath: `/rest/v1/invoices?external_order_id=eq.${encodeURIComponent(payload.order_id)}&select=id,external_order_id,amount_idr,raw_payload&limit=1`,
+      });
+      const invoice = Array.isArray(invoices) ? invoices[0] : null;
+      const trxId = String(payload.trx_id || invoice?.raw_payload?.sakurupiah?.trx_id || "").trim();
+      if (!invoice || !trxId) {
+        throw new HttpError(404, "Invoice Sakurupiah/trx_id tidak ditemukan untuk order ini.");
       }
-      
-      const result = await processMidtransNotification({config: internalConfig, notification: verification.data});
+
+      const verification = await checkSakurupiahStatus({config: internalConfig, trxId});
+      const statusData = firstSakurupiahData(verification);
+      const status = String(statusData?.status || "").trim().toLowerCase();
+      if (!status) {
+        throw new HttpError(502, `Sakurupiah status response is missing status: ${JSON.stringify(verification)}`);
+      }
+
+      const result = await processSakurupiahNotification({
+        config: internalConfig,
+        notification: {
+          ...(invoice.raw_payload?.sakurupiah || {}),
+          ...statusData,
+          trx_id: trxId,
+          merchant_ref: payload.order_id,
+          status,
+          status_kode: statusData.status_kode ?? (status === "berhasil" ? 1 : status === "expired" ? 2 : 0),
+          amount: invoice.amount_idr,
+        },
+      });
       sendJson(res, 200, {
         ...result,
-        source: verification.source,
+        source: "sakurupiah-status",
       });
       return;
     }

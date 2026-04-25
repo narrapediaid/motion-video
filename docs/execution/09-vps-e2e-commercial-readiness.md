@@ -7,7 +7,7 @@ Tujuan:
 1. Memastikan alur autentikasi user berjalan.
 2. Memastikan checkout membuat order/invoice valid.
 3. Memastikan endpoint `verify-payment` berjalan dengan token login.
-4. Memastikan webhook Midtrans tervalidasi signature dan memproses status.
+4. Memastikan webhook Sakurupiah tervalidasi signature dan memproses status.
 5. Memastikan status akhir invoice/membership siap untuk rilis komersial.
 6. Memastikan render gate (`/render/authorize`) menerbitkan job ticket valid.
 
@@ -19,9 +19,9 @@ curl -s https://apimotion.narrapedia.top/subscription/health
 ```
 
 2. Variabel env backend sudah benar di VPS:
-`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_PRODUCTION`.
+`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `SAKURUPIAH_API_ID`, `SAKURUPIAH_API_KEY`, `SAKURUPIAH_CALLBACK_URL`, `SAKURUPIAH_IS_PRODUCTION`.
 
-3. Untuk test end-to-end awal, sangat disarankan pakai mode sandbox Midtrans.
+3. Untuk test end-to-end awal, sangat disarankan pakai mode sandbox Sakurupiah.
 
 4. Jalankan command dari VPS di folder project:
 ```bash
@@ -38,7 +38,7 @@ export ENV_FILE="/opt/motion-video/deploy/vps/subscription-api.env"
 export SUPABASE_URL="$(grep '^SUPABASE_URL=' "$ENV_FILE" | cut -d= -f2-)"
 export SUPABASE_ANON_KEY="$(grep '^SUPABASE_ANON_KEY=' "$ENV_FILE" | cut -d= -f2-)"
 export SUPABASE_SERVICE_ROLE_KEY="$(grep '^SUPABASE_SERVICE_ROLE_KEY=' "$ENV_FILE" | cut -d= -f2-)"
-export MIDTRANS_SERVER_KEY="$(grep '^MIDTRANS_SERVER_KEY=' "$ENV_FILE" | cut -d= -f2-)"
+export SAKURUPIAH_API_KEY="$(grep '^SAKURUPIAH_API_KEY=' "$ENV_FILE" | cut -d= -f2-)"
 ```
 
 ## 2) Login user test (Supabase Auth)
@@ -96,7 +96,7 @@ Checkout:
 CHECKOUT_JSON="$(curl -sS -X POST "$API_BASE/checkout" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{\"planId\":\"$PLAN_ID\"}")"
+  -d "{\"planId\":\"$PLAN_ID\",\"paymentMethod\":\"QRIS\",\"customerPhone\":\"6281234567890\",\"returnUrl\":\"https://apimotion.narrapedia.top/subscription\"}")"
 
 echo "$CHECKOUT_JSON" | jq .
 
@@ -122,7 +122,7 @@ echo "$VERIFY_JSON" | jq .
 
 Catatan:
 1. Jika pembayaran belum selesai, status bisa `pending`.
-2. Jika transaksi belum terlihat di Midtrans, response bisa `404` sementara.
+2. Jika transaksi belum terlihat di Sakurupiah, response bisa `404` sementara.
 
 ## 4b) Uji Render Gate Authorize
 
@@ -138,7 +138,7 @@ Kriteria lulus:
 2. ada `jobTicket`.
 3. ada `expiresAt`.
 
-## 5) Selesaikan pembayaran di Midtrans
+## 5) Selesaikan pembayaran di Sakurupiah
 
 Buka URL berikut di browser untuk menyelesaikan pembayaran test:
 
@@ -172,14 +172,11 @@ export GROSS_AMOUNT="${AMOUNT_IDR}.00"
 Generate payload signature valid:
 
 ```bash
-WEBHOOK_PAYLOAD="$(node scripts/midtrans-sandbox-payload.mjs \
-  --order-id "$ORDER_ID" \
-  --transaction-id "TX-$ORDER_ID" \
-  --status-code "200" \
-  --gross-amount "$GROSS_AMOUNT" \
-  --transaction-status "settlement" \
-  --fraud-status "accept" \
-  --server-key "$MIDTRANS_SERVER_KEY")"
+WEBHOOK_PAYLOAD="$(node scripts/sakurupiah-callback-payload.mjs \
+  --merchant-ref "$ORDER_ID" \
+  --trx-id "SBX-$ORDER_ID" \
+  --status "berhasil" \
+  --api-key "$SAKURUPIAH_API_KEY")"
 
 echo "$WEBHOOK_PAYLOAD" | jq .
 ```
@@ -189,7 +186,9 @@ Kirim webhook:
 ```bash
 curl -sS -X POST "$API_BASE/webhook" \
   -H "Content-Type: application/json" \
-  -d "$WEBHOOK_PAYLOAD" | jq .
+  -H "X-Callback-Event: payment_status" \
+  -H "X-Callback-Signature: $(echo "$WEBHOOK_PAYLOAD" | jq -r '.headers."X-Callback-Signature"')" \
+  -d "$(echo "$WEBHOOK_PAYLOAD" | jq -c '.body')" | jq .
 ```
 
 Kriteria lulus:

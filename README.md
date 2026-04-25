@@ -86,8 +86,8 @@ npm run desktop:build
 Gunakan checklist ini sebelum project dibagikan ke publik:
 
 1. Secrets server-side tidak boleh ada di desktop app.
-2. `SUPABASE_SERVICE_ROLE_KEY` dan `MIDTRANS_SERVER_KEY` hanya dipakai di backend/webhook server.
-3. Desktop app hanya memakai key publik: `SUPABASE_URL`, `SUPABASE_ANON_KEY`/`SUPABASE_PUBLISHABLE_KEY`, `MIDTRANS_CLIENT_KEY`.
+2. `SUPABASE_SERVICE_ROLE_KEY`, `SAKURUPIAH_API_ID`, dan `SAKURUPIAH_API_KEY` hanya dipakai di backend/webhook server.
+3. Desktop app hanya memakai key publik: `SUPABASE_URL`, `SUPABASE_ANON_KEY`/`SUPABASE_PUBLISHABLE_KEY`, dan `SUBSCRIPTION_BACKEND_URL`.
 4. File `.env` tidak boleh dibundle ke installer/portable.
 5. Endpoint sensitif (checkout, verify payment, voucher write, webhook) harus diproses oleh backend terpisah.
 6. Set `SUBSCRIPTION_BACKEND_URL` untuk mengarahkan proses pembayaran ke backend.
@@ -100,8 +100,7 @@ Template env publik yang aman untuk distribusi (tanpa server secret):
 SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
 SUPABASE_PUBLISHABLE_KEY=YOUR_SUPABASE_ANON_KEY
-MIDTRANS_CLIENT_KEY=YOUR_MIDTRANS_CLIENT_KEY
-MIDTRANS_IS_PRODUCTION=true
+SAKURUPIAH_IS_PRODUCTION=true
 SUBSCRIPTION_BACKEND_URL=https://YOUR_BACKEND_DOMAIN/subscription
 ```
 
@@ -114,7 +113,7 @@ Jika log menampilkan:
 
 cek langkah berikut:
 1. Pastikan file `.env.public` berada satu folder dengan `.exe` (untuk app publik).
-2. Pastikan key ini terisi: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `MIDTRANS_CLIENT_KEY`, `SUBSCRIPTION_BACKEND_URL`.
+2. Pastikan key ini terisi: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUBSCRIPTION_BACKEND_URL`.
 3. Buka endpoint diagnostik lokal: `http://127.0.0.1:<PORT>/api/subscription/env-check`.
 4. Jika env di lokasi lain, set `BATCH_UI_ENV_FILE=<absolute_path_to_env_file>`.
 5. Pastikan nilainya bukan placeholder seperti `YOUR_*` dan `replace_with*`.
@@ -129,9 +128,12 @@ Untuk mode publik, endpoint sensitif diarahkan ke Edge Function `subscription-ap
 $env:SUPABASE_PROJECT_REF="your_project_ref"
 $env:SUPABASE_ACCESS_TOKEN="your_pat"
 $env:SUPABASE_DB_PASSWORD="your_db_password"
-$env:MIDTRANS_SERVER_KEY="your_midtrans_server_key"
-$env:MIDTRANS_CLIENT_KEY="your_midtrans_client_key"
-$env:MIDTRANS_IS_PRODUCTION="true"
+$env:SAKURUPIAH_API_ID="your_sakurupiah_api_id"
+$env:SAKURUPIAH_API_KEY="your_sakurupiah_api_key"
+$env:SAKURUPIAH_CALLBACK_URL="https://your_backend_domain/subscription/webhook"
+$env:SAKURUPIAH_IS_PRODUCTION="true"
+$env:SAKURUPIAH_MERCHANT_FEE="1"
+$env:SAKURUPIAH_DEFAULT_EXPIRED_HOURS="24"
 ```
 
 2. Jalankan deploy script:
@@ -171,9 +173,9 @@ Skenario uji end-to-end readiness (login, checkout, verify-payment, webhook) ada
 
 Setelah hardening publik aktif, rotasi key internal yang pernah dipakai di desktop/debug build:
 
-1. Generate key baru: `SUPABASE_SERVICE_ROLE_KEY` dan `MIDTRANS_SERVER_KEY`.
+1. Generate key baru: `SUPABASE_SERVICE_ROLE_KEY` dan `SAKURUPIAH_API_KEY`.
 2. Update secrets di Supabase project dan sistem backend.
-3. Redeploy function (`midtrans-webhook` dan `subscription-api`).
+3. Redeploy function `subscription-api`.
 4. Revoke key lama.
 5. Jalankan smoke test pembayaran dan webhook sebelum rilis publik.
 
@@ -241,7 +243,7 @@ This guarantees unique names and keeps output order deterministic.
 
 After running `npm run batch:ui`, open the URL shown in terminal (default: `http://localhost:3210`).
 
-Subscription interface (Supabase + Midtrans) is available at:
+Subscription interface (Supabase + Sakurupiah) is available at:
 - http://localhost:3210/subscription
 
 Desktop app uses Electron shell and loads:
@@ -258,8 +260,8 @@ Inside the interface you can:
 Inside subscription interface you can:
 1. Login or sign up with Supabase auth
 2. Load active plans from Supabase
-3. Create checkout session to Midtrans Snap
-4. Open Midtrans payment page
+3. Choose Sakurupiah payment channel and enter customer phone
+4. Open Sakurupiah checkout page
 5. Check membership, invoices, and recent payments
 
 This makes batch processing easier without typing multiple CLI commands.

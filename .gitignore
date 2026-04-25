@@ -27,6 +27,7 @@ motion-video/
 # Local AI/tooling folders
 .agent/
 .agents/
+.github/skills/
 .claude/
 .cline/
 .codebuddy/
@@ -55,3 +56,4 @@ motion-video/
 .trae/
 .windsurf/
 .zencoder/
+skills/

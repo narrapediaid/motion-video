@@ -22,7 +22,7 @@ Rute yang dipakai desktop app:
 - `GET /health`
 
 Rute callback provider:
-- `POST /webhook` (dipanggil Midtrans server-to-server, diverifikasi dengan signature Midtrans)
+- `POST /webhook` (dipanggil Sakurupiah server-to-server, diverifikasi dengan `X-Callback-Signature`)
 
 Base URL yang harus diisi ke env desktop publik:
 
@@ -46,9 +46,10 @@ RENDER_TICKET_TTL_SECONDS=120
 $env:SUPABASE_PROJECT_REF="your_project_ref"
 $env:SUPABASE_ACCESS_TOKEN="your_pat"
 $env:SUPABASE_DB_PASSWORD="your_db_password"
-$env:MIDTRANS_SERVER_KEY="your_midtrans_server_key"
-$env:MIDTRANS_CLIENT_KEY="your_midtrans_client_key"
-$env:MIDTRANS_IS_PRODUCTION="true"
+$env:SAKURUPIAH_API_ID="your_sakurupiah_api_id"
+$env:SAKURUPIAH_API_KEY="your_sakurupiah_api_key"
+$env:SAKURUPIAH_CALLBACK_URL="https://YOUR_PROJECT.functions.supabase.co/functions/v1/subscription-api/webhook"
+$env:SAKURUPIAH_IS_PRODUCTION="true"
 ```
 
 2. Deploy migration + function:
@@ -66,7 +67,7 @@ curl https://YOUR_PROJECT.functions.supabase.co/functions/v1/subscription-api/he
 Expected response:
 
 ```json
-{"ok":true,"service":"subscription-api","mode":"production"}
+{"ok":true,"service":"subscription-api","paymentProvider":"sakurupiah","mode":"production"}
 ```
 
 ## Public Desktop Env Policy
@@ -74,13 +75,12 @@ Expected response:
 Yang boleh ada di app publik:
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY` / `SUPABASE_PUBLISHABLE_KEY`
-- `MIDTRANS_CLIENT_KEY`
-- `MIDTRANS_IS_PRODUCTION`
 - `SUBSCRIPTION_BACKEND_URL`
 
 Yang tidak boleh ada di app publik:
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `MIDTRANS_SERVER_KEY`
+- `SAKURUPIAH_API_ID`
+- `SAKURUPIAH_API_KEY`
 - `SUPABASE_ACCESS_TOKEN`
 - `SUPABASE_DB_PASSWORD`
 - `RENDER_GATE_SECRET`
@@ -91,18 +91,18 @@ Lakukan segera setelah backend publik aktif.
 
 1. Generate key baru di provider:
 - Supabase: rotate `service_role` key.
-- Midtrans: rotate `server key`.
+- Sakurupiah: rotate `api key`.
 
 2. Update secrets backend:
 - Set key baru via `supabase secrets set`.
-- Redeploy function (`midtrans-webhook` dan `subscription-api`).
+- Redeploy function `subscription-api`.
 
 3. Revoke key lama.
 
 4. Validasi pasca-rotasi:
 - Checkout berhasil membuat invoice.
-- Verify payment memproses status dari Midtrans.
-- Webhook Midtrans diterima dengan signature valid.
+- Verify payment memproses status dari Sakurupiah.
+- Webhook Sakurupiah diterima dengan signature valid.
 - Membership status berubah sesuai hasil pembayaran.
 
 5. Audit akhir:

@@ -506,6 +506,23 @@
         font-weight: 600;
       }
 
+      .invoice-order-id {
+        font-weight: 700;
+        color: var(--text);
+      }
+
+      .invoice-inline-actions {
+        margin-top: 6px;
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .invoice-note {
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+
       .logs {
         margin-top: 14px;
         border: 1px solid #365b83;
@@ -650,7 +667,7 @@
             <p class="eyebrow">Portal Keanggotaan</p>
             <h1 class="title">Aktifkan Akses Premium untuk Workflow Produksi yang Lebih Cepat</h1>
             <p class="subtitle">
-              Pilih paket yang paling sesuai dengan kebutuhan tim Anda, amankan pembayaran dengan Midtrans, dan pantau status keanggotaan secara real-time dalam satu dashboard.
+              Pilih paket yang paling sesuai dengan kebutuhan tim Anda, bayar melalui Sakurupiah, dan pantau status keanggotaan secara real-time dalam satu dashboard.
             </p>
 
             <div class="hero-signals">
@@ -660,7 +677,7 @@
               </div>
               <div class="signal">
                 <p class="signal-label">Pembayaran</p>
-                <p class="signal-value">Checkout Midtrans Snap yang aman dan cepat</p>
+                <p class="signal-value">Checkout Sakurupiah dengan QRIS, VA, dan e-wallet</p>
               </div>
               <div class="signal">
                 <p class="signal-label">Status</p>
@@ -711,6 +728,18 @@
               </div>
             </div>
           </article>
+
+          <article class="card" id="appUpdateCard">
+            <h3>Update Aplikasi</h3>
+            <p class="meta">
+              Dapatkan update fitur terbaru, catatan rilis, dan pengumuman resmi Motion Batch.
+            </p>
+            <div class="row" style="margin-top: 12px">
+              <button class="btn btn-soft" id="appUpdateBtn" type="button" style="width: 100%">
+                Buka Halaman Update
+              </button>
+            </div>
+          </article>
         </aside>
 
         <main class="main-column">
@@ -725,6 +754,8 @@
             <div class="row" style="margin-top: 14px">
               <input class="coupon-code" id="couponInput" type="text" placeholder="Masukkan Coupon atau Voucher" />
               <button class="btn btn-soft" id="checkCouponBtn" type="button">Cek Coupon/Voucher</button>
+              <select id="paymentMethodSelect" aria-label="Channel pembayaran"></select>
+              <input id="customerPhoneInput" type="tel" placeholder="Nomor HP pembayaran" autocomplete="tel" />
               <button class="btn btn-primary" id="checkoutBtn" type="button" disabled>Lanjut Checkout</button>
               <button class="btn btn-soft" id="refreshBtn" type="button">Perbarui Status</button>
             </div>
@@ -780,10 +811,13 @@
       const userEmail = document.getElementById("userEmail");
       const profileDetails = document.getElementById("profileDetails");
       const logoutBtn = document.getElementById("logoutBtn");
+      const appUpdateBtn = document.getElementById("appUpdateBtn");
       const plansContainer = document.getElementById("plansContainer");
       const voucherAppliedBadge = document.getElementById("voucherAppliedBadge");
       const couponInput = document.getElementById("couponInput");
       const checkCouponBtn = document.getElementById("checkCouponBtn");
+      const paymentMethodSelect = document.getElementById("paymentMethodSelect");
+      const customerPhoneInput = document.getElementById("customerPhoneInput");
       const checkoutBtn = document.getElementById("checkoutBtn");
       const refreshBtn = document.getElementById("refreshBtn");
       const membershipStatus = document.getElementById("membershipStatus");
@@ -799,17 +833,20 @@
         selectedPlanId: "",
         checkedVoucher: null,
         voucherPreviewByPlan: {},
-        midtransMode: "sandbox",
-        midtransClientKey: "",
-        midtransSnapReady: false,
+        sakurupiahMode: "sandbox",
+        paymentChannels: [],
         membership: null,
         checkoutLock: {
           locked: false,
           reason: "",
         },
+        pendingPayments: {},
+        invoicePaymentMap: {},
       };
 
       const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+      const PENDING_PAYMENT_STORAGE_KEY = "mvb_pending_invoice_payments_v1";
+      const APP_UPDATE_URL = "https://narrapedia.top/tools/narrapedia-motion-batch";
 
       const moneyIdr = new Intl.NumberFormat("id-ID", {
         style: "currency",
@@ -985,6 +1022,106 @@
       };
 
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const escapeJsSingleQuote = (value) =>
+        String(value || "")
+          .replace(/\\/g, "\\\\")
+          .replace(/'/g, "\\'");
+
+      const loadPendingPayments = () => {
+        try {
+          const raw = localStorage.getItem(PENDING_PAYMENT_STORAGE_KEY);
+          if (!raw) {
+            return {};
+          }
+
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== "object") {
+            return {};
+          }
+
+          const nowMs = Date.now();
+          const cleaned = {};
+
+          for (const [orderId, entry] of Object.entries(parsed)) {
+            if (!entry || typeof entry !== "object") {
+              continue;
+            }
+
+            const trxId = String(entry.trxId || "").trim();
+            const redirectUrl = String(entry.redirectUrl || "").trim();
+            const updatedAtMs = Date.parse(String(entry.updatedAt || ""));
+
+            if (!trxId && !redirectUrl) {
+              continue;
+            }
+
+            if (Number.isFinite(updatedAtMs) && nowMs - updatedAtMs > THREE_DAYS_MS) {
+              continue;
+            }
+
+            cleaned[orderId] = {
+              trxId,
+              redirectUrl,
+              updatedAt: Number.isFinite(updatedAtMs)
+                ? new Date(updatedAtMs).toISOString()
+                : new Date().toISOString(),
+            };
+          }
+
+          return cleaned;
+        } catch {
+          return {};
+        }
+      };
+
+      const persistPendingPayments = () => {
+        try {
+          localStorage.setItem(PENDING_PAYMENT_STORAGE_KEY, JSON.stringify(state.pendingPayments));
+        } catch {
+          // ignore storage failure on restricted contexts
+        }
+      };
+
+      const upsertPendingPayment = ({ orderId, trxId = "", redirectUrl = "" }) => {
+        const normalizedOrderId = String(orderId || "").trim();
+        if (!normalizedOrderId) {
+          return;
+        }
+
+        const normalizedTrxId = String(trxId || "").trim();
+        const normalizedRedirectUrl = String(redirectUrl || "").trim();
+        if (!normalizedTrxId && !normalizedRedirectUrl) {
+          return;
+        }
+
+        const prev = state.pendingPayments[normalizedOrderId] || {};
+        state.pendingPayments[normalizedOrderId] = {
+          trxId: normalizedTrxId || String(prev.trxId || "").trim(),
+          redirectUrl: normalizedRedirectUrl || String(prev.redirectUrl || "").trim(),
+          updatedAt: new Date().toISOString(),
+        };
+        persistPendingPayments();
+      };
+
+      const clearPendingPayment = (orderId) => {
+        const normalizedOrderId = String(orderId || "").trim();
+        if (!normalizedOrderId) {
+          return;
+        }
+
+        if (state.pendingPayments[normalizedOrderId]) {
+          delete state.pendingPayments[normalizedOrderId];
+          persistPendingPayments();
+        }
+      };
+
+      const getPendingPayment = (orderId) => {
+        const normalizedOrderId = String(orderId || "").trim();
+        if (!normalizedOrderId) {
+          return null;
+        }
+        return state.pendingPayments[normalizedOrderId] || null;
+      };
 
       const signInWithRetry = async ({ email, password, maxAttempts = 3 }) => {
         let lastError = null;
@@ -1029,39 +1166,6 @@
         await apiFetch("/api/subscription/session", {
           method: "DELETE",
         });
-      };
-
-      const loadMidtransSnapScript = async () => {
-        if (!state.midtransClientKey) {
-          log("Client key Midtrans belum tersedia. Checkout akan menggunakan URL pengalihan.", "error");
-          state.midtransSnapReady = false;
-          return;
-        }
-
-        const existing = document.querySelector("script[data-midtrans-snap='1']");
-        if (existing && window.snap) {
-          state.midtransSnapReady = true;
-          return;
-        }
-
-        const scriptUrl = state.midtransMode === "production"
-          ? "https://app.midtrans.com/snap/snap.js"
-          : "https://app.sandbox.midtrans.com/snap/snap.js";
-
-        await new Promise((resolve, reject) => {
-          const script = document.createElement("script");
-          script.src = scriptUrl;
-          script.setAttribute("data-client-key", state.midtransClientKey);
-          script.setAttribute("data-midtrans-snap", "1");
-          script.onload = () => resolve();
-          script.onerror = () => reject(new Error("Gagal memuat skrip Midtrans Snap"));
-          document.head.appendChild(script);
-        });
-
-        state.midtransSnapReady = Boolean(window.snap);
-        if (!state.midtransSnapReady) {
-          throw new Error("Midtrans Snap tidak tersedia setelah script dimuat");
-        }
       };
 
       const setMode = (mode) => {
@@ -1420,6 +1524,7 @@
       const renderStatus = (data) => {
         state.membership = data?.membership || null;
         state.checkoutLock = getCheckoutLockState(state.membership);
+        state.invoicePaymentMap = {};
 
         if (!data?.membership) {
           setMembershipFallback("Belum ada keanggotaan aktif. Pilih paket untuk mulai mendapatkan akses premium.");
@@ -1460,17 +1565,52 @@
 
         invoices.forEach((invoice) => {
           const row = document.createElement("tr");
-          const snapToken = invoice.raw_payload?.midtrans?.token;
+          const orderId = String(invoice.external_order_id || "").trim();
+          const orderIdArg = escapeJsSingleQuote(orderId);
           const statusVal = (invoice.status || "").toLowerCase();
+          const isOpenInvoice = statusVal === "open" || statusVal === "pending";
+          const sakurupiahPayload = invoice?.raw_payload?.sakurupiah || {};
+          const cachedPayment = getPendingPayment(orderId);
+          const trxId = String(sakurupiahPayload?.trx_id || cachedPayment?.trxId || "").trim();
+          const redirectUrl = String(
+            sakurupiahPayload?.checkout_url
+            || sakurupiahPayload?.checkoutUrl
+            || cachedPayment?.redirectUrl
+            || "",
+          ).trim();
+
+          if (isOpenInvoice && (trxId || redirectUrl)) {
+            upsertPendingPayment({
+              orderId,
+              trxId,
+              redirectUrl,
+            });
+            state.invoicePaymentMap[orderId] = {
+              trxId,
+              redirectUrl,
+            };
+          } else if (!isOpenInvoice) {
+            clearPendingPayment(orderId);
+          }
 
           let actionHtml = "-";
-          if ((statusVal === "open" || statusVal === "pending") && snapToken) {
-            actionHtml = `<button class="btn btn-primary" style="padding: 4px 8px; font-size: 12px; height: auto; min-height: 28px;" onclick="window.resumeInvoicePayment('${snapToken}', '${invoice.external_order_id}')">Bayar</button>
-            <button class="btn btn-soft" style="padding: 4px 8px; font-size: 12px; height: auto; min-height: 28px; margin-left: 4px;" onclick="window.verifyPayment('${invoice.external_order_id}')">Cek Status</button>`;
+          let inlineOrderActions = "";
+          if (isOpenInvoice) {
+            const payDisabledAttr = redirectUrl ? "" : "disabled title=\"URL pembayaran belum tersedia untuk order ini\"";
+            inlineOrderActions = `
+              <div class="invoice-inline-actions">
+                <button class="btn btn-primary" style="padding: 4px 8px; font-size: 12px; height: auto; min-height: 28px;" onclick="window.payInvoiceOrder('${orderIdArg}')" ${payDisabledAttr}>Bayar</button>
+                <button class="btn btn-soft" style="padding: 4px 8px; font-size: 12px; height: auto; min-height: 28px;" onclick="window.verifyPayment('${orderIdArg}')">Cek Status</button>
+              </div>
+            `;
+            actionHtml = '<span class="invoice-note">Gunakan tombol pada kolom Order ID.</span>';
           }
 
           row.innerHTML = `
-            <td>${invoice.external_order_id}</td>
+            <td>
+              <div class="invoice-order-id">${orderId || "-"}</div>
+              ${inlineOrderActions}
+            </td>
             <td>${badgeHtml(invoice.status)}</td>
             <td>${moneyIdr.format(Number(invoice.amount_idr || 0))}</td>
             <td>${formatDateTime(invoice.paid_at)}</td>
@@ -1503,10 +1643,10 @@
           const isNotificationObject =
             orderOrNotification &&
             typeof orderOrNotification === "object" &&
-            typeof orderOrNotification.order_id === "string";
+            typeof orderOrNotification.merchant_ref === "string";
 
           const orderId = isNotificationObject
-            ? orderOrNotification.order_id
+            ? orderOrNotification.merchant_ref
             : String(orderOrNotification || "").trim();
 
           if (!orderId) {
@@ -1533,30 +1673,60 @@
         }
       };
 
-      window.resumeInvoicePayment = (snapToken, orderId) => {
-        if (!state.midtransSnapReady || !window.snap) {
-          log("Midtrans Snap belum siap. Silakan perbarui halaman.", "error");
+      window.payInvoiceOrder = (orderId) => {
+        const normalizedOrderId = String(orderId || "").trim();
+        if (!normalizedOrderId) {
+          log("Order ID tidak valid untuk melanjutkan pembayaran.", "error");
           return;
         }
 
-        window.snap.pay(snapToken, {
-          onSuccess: async (res) => {
-            log("Pembayaran berhasil diselesaikan.", "ok");
-            await window.verifyPayment(res?.order_id ? res : {order_id: orderId});
-          },
-          onPending: async (res) => {
-            log("Pembayaran masih menunggu penyelesaian.", "ok");
-            await window.verifyPayment(res?.order_id ? res : {order_id: orderId});
-          },
-          onError: async (res) => {
-            log(`Midtrans error: ${JSON.stringify(res)}`, "error");
-            await window.verifyPayment(res?.order_id ? res : {order_id: orderId});
-          },
-          onClose: async () => {
-            log("Jendela Midtrans ditutup sebelum pembayaran selesai.", "error");
-            await window.verifyPayment(orderId);
-          },
+        const invoicePaymentMeta =
+          state.invoicePaymentMap[normalizedOrderId]
+          || getPendingPayment(normalizedOrderId)
+          || null;
+        const redirectUrl = String(invoicePaymentMeta?.redirectUrl || "").trim();
+
+        if (redirectUrl) {
+          log(`Membuka halaman pembayaran untuk ${normalizedOrderId}.`, "ok");
+          window.open(redirectUrl, "_blank", "noopener,noreferrer");
+          return;
+        }
+
+        log(
+          "URL pembayaran tidak ditemukan untuk order ini. Klik Cek Status atau buat checkout baru.",
+          "error",
+        );
+      };
+
+      const renderPaymentChannels = () => {
+        const channels = Array.isArray(state.paymentChannels) ? state.paymentChannels : [];
+        const activeChannels = channels.filter((channel) =>
+          String(channel?.status || "Aktif").toLowerCase() !== "nonaktif"
+          && String(channel?.code || "").trim()
+        );
+
+        paymentMethodSelect.innerHTML = "";
+        const entries = activeChannels.length
+          ? activeChannels
+          : [{code: "QRIS", name: "QRIS"}];
+
+        entries.forEach((channel) => {
+          const option = document.createElement("option");
+          option.value = String(channel.code || "").trim();
+          option.textContent = String(channel.name || channel.code || "").trim();
+          paymentMethodSelect.appendChild(option);
         });
+      };
+
+      const loadPaymentChannels = async () => {
+        try {
+          const data = await apiFetch("/api/subscription/payment-channels");
+          state.paymentChannels = Array.isArray(data?.channels) ? data.channels : [];
+        } catch (error) {
+          state.paymentChannels = [{code: "QRIS", name: "QRIS"}];
+          log("Channel pembayaran Sakurupiah memakai fallback QRIS: " + error.message, "error");
+        }
+        renderPaymentChannels();
       };
 
       const loadPlans = async () => {
@@ -1625,11 +1795,11 @@
       };
 
       const init = async () => {
+        state.pendingPayments = loadPendingPayments();
         const config = await apiFetch("/api/subscription/config");
         const redirectReason = new URLSearchParams(window.location.search).get("reason");
 
-        state.midtransMode = config.midtransMode === "production" ? "production" : "sandbox";
-        state.midtransClientKey = typeof config.midtransClientKey === "string" ? config.midtransClientKey : "";
+        state.sakurupiahMode = config.sakurupiahMode === "production" ? "production" : "sandbox";
 
         if (redirectReason === "membership") {
           log("Akses ke halaman utama memerlukan keanggotaan aktif.", "error");
@@ -1639,15 +1809,7 @@
           log("Silakan masuk untuk mengakses halaman utama.", "error");
         }
 
-        try {
-          await loadMidtransSnapScript();
-          if (state.midtransSnapReady) {
-            log("Midtrans Snap siap digunakan.", "ok");
-          }
-        } catch (error) {
-          state.midtransSnapReady = false;
-          log(error.message || String(error), "error");
-        }
+        await loadPaymentChannels();
 
         state.supabase = createClient(config.supabaseUrl, config.supabaseAnonKey, {
           auth: {
@@ -1818,6 +1980,24 @@
         });
       });
 
+      appUpdateBtn.addEventListener("click", async () => {
+        try {
+          await apiFetch("/api/open-in-chrome", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              url: APP_UPDATE_URL,
+            }),
+          });
+          log("Halaman update dibuka melalui Google Chrome.", "ok");
+        } catch {
+          window.open(APP_UPDATE_URL, "_blank", "noopener,noreferrer");
+          log("Chrome tidak tersedia, halaman update dibuka di browser default.", "ok");
+        }
+      });
+
       checkoutBtn.addEventListener("click", async () => {
         if (!state.session) {
           log("Silakan masuk terlebih dahulu sebelum melakukan checkout.", "error");
@@ -1834,6 +2014,15 @@
 
         try {
           const normalizedVoucherCode = String(couponInput?.value || "").trim().toUpperCase();
+          const paymentMethod = String(paymentMethodSelect?.value || "").trim();
+          const customerPhone = String(customerPhoneInput?.value || "").trim();
+          if (!paymentMethod) {
+            throw new Error("Pilih channel pembayaran terlebih dahulu.");
+          }
+          if (!customerPhone) {
+            throw new Error("Nomor HP pembayaran wajib diisi.");
+          }
+
           const result = await apiFetch("/api/subscription/checkout", {
             method: "POST",
             headers: {
@@ -1842,10 +2031,18 @@
             body: JSON.stringify({
               planId: state.selectedPlanId,
               voucherCode: normalizedVoucherCode || undefined,
+              paymentMethod,
+              customerPhone,
+              returnUrl: window.location.href.split("#")[0],
             }),
           });
 
           log(`Checkout berhasil dibuat. Order ID: ${result.orderId}`, "ok");
+          upsertPendingPayment({
+            orderId: result.orderId,
+            trxId: result.trxId,
+            redirectUrl: result.checkoutUrl || result.redirectUrl,
+          });
 
           if (result?.voucher?.code) {
             log(
@@ -1854,30 +2051,12 @@
             );
           }
 
-          if (result.token && state.midtransSnapReady && window.snap) {
-            window.snap.pay(result.token, {
-              onSuccess: async (res) => {
-                log("Pembayaran berhasil diselesaikan.", "ok");
-                await window.verifyPayment(res?.order_id ? res : {order_id: result.orderId});
-              },
-              onPending: async (res) => {
-                log("Pembayaran masih menunggu penyelesaian.", "ok");
-                await window.verifyPayment(res?.order_id ? res : {order_id: result.orderId});
-              },
-              onError: async (res) => {
-                log(`Midtrans error: ${JSON.stringify(res)}`, "error");
-                await window.verifyPayment(res?.order_id ? res : {order_id: result.orderId});
-              },
-              onClose: async () => {
-                log("Jendela Midtrans ditutup sebelum pembayaran selesai.", "error");
-                await window.verifyPayment(result.orderId);
-              },
-            });
-          } else if (result.redirectUrl) {
-            log("Mengarahkan ke halaman pembayaran Midtrans.", "ok");
-            window.location.assign(result.redirectUrl);
+          const checkoutUrl = String(result.checkoutUrl || result.redirectUrl || "").trim();
+          if (checkoutUrl) {
+            log("Mengarahkan ke halaman pembayaran Sakurupiah.", "ok");
+            window.location.assign(checkoutUrl);
           } else {
-            throw new Error("Checkout tidak mengembalikan token atau URL pengalihan Midtrans.");
+            throw new Error("Checkout tidak mengembalikan URL pembayaran Sakurupiah.");
           }
         } catch (error) {
           log(error.message || String(error), "error");

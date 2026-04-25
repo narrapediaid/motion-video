@@ -34,11 +34,20 @@ function Require-EnvVar {
 $projectRef = Require-EnvVar "SUPABASE_PROJECT_REF"
 $accessToken = Require-EnvVar "SUPABASE_ACCESS_TOKEN"
 $dbPassword = Require-EnvVar "SUPABASE_DB_PASSWORD"
-$midtransClientKey = [Environment]::GetEnvironmentVariable("MIDTRANS_CLIENT_KEY")
-$midtransServerKey = Require-EnvVar "MIDTRANS_SERVER_KEY"
-$midtransIsProduction = [Environment]::GetEnvironmentVariable("MIDTRANS_IS_PRODUCTION")
-if ([string]::IsNullOrWhiteSpace($midtransIsProduction)) {
-  $midtransIsProduction = "false"
+$sakurupiahApiId = Require-EnvVar "SAKURUPIAH_API_ID"
+$sakurupiahApiKey = Require-EnvVar "SAKURUPIAH_API_KEY"
+$sakurupiahCallbackUrl = Require-EnvVar "SAKURUPIAH_CALLBACK_URL"
+$sakurupiahIsProduction = [Environment]::GetEnvironmentVariable("SAKURUPIAH_IS_PRODUCTION")
+$sakurupiahMerchantFee = [Environment]::GetEnvironmentVariable("SAKURUPIAH_MERCHANT_FEE")
+$sakurupiahDefaultExpiredHours = [Environment]::GetEnvironmentVariable("SAKURUPIAH_DEFAULT_EXPIRED_HOURS")
+if ([string]::IsNullOrWhiteSpace($sakurupiahIsProduction)) {
+  $sakurupiahIsProduction = "false"
+}
+if ([string]::IsNullOrWhiteSpace($sakurupiahMerchantFee)) {
+  $sakurupiahMerchantFee = "1"
+}
+if ([string]::IsNullOrWhiteSpace($sakurupiahDefaultExpiredHours)) {
+  $sakurupiahDefaultExpiredHours = "24"
 }
 
 Write-Host "[1/6] Login Supabase CLI with PAT..."
@@ -55,14 +64,9 @@ if (-not $DeployFunctionOnly) {
 }
 
 Write-Host "[4/6] Set function secrets..."
-if ([string]::IsNullOrWhiteSpace($midtransClientKey)) {
-  Run-Checked "supabase secrets set" { npx supabase secrets set --project-ref $projectRef MIDTRANS_SERVER_KEY=$midtransServerKey MIDTRANS_IS_PRODUCTION=$midtransIsProduction }
-} else {
-  Run-Checked "supabase secrets set" { npx supabase secrets set --project-ref $projectRef MIDTRANS_CLIENT_KEY=$midtransClientKey MIDTRANS_SERVER_KEY=$midtransServerKey MIDTRANS_IS_PRODUCTION=$midtransIsProduction }
-}
+Run-Checked "supabase secrets set" { npx supabase secrets set --project-ref $projectRef SAKURUPIAH_API_ID=$sakurupiahApiId SAKURUPIAH_API_KEY=$sakurupiahApiKey SAKURUPIAH_CALLBACK_URL=$sakurupiahCallbackUrl SAKURUPIAH_IS_PRODUCTION=$sakurupiahIsProduction SAKURUPIAH_MERCHANT_FEE=$sakurupiahMerchantFee SAKURUPIAH_DEFAULT_EXPIRED_HOURS=$sakurupiahDefaultExpiredHours }
 
-Write-Host "[5/6] Deploy function midtrans-webhook..."
-Run-Checked "supabase functions deploy" { npx supabase functions deploy midtrans-webhook --project-ref $projectRef }
+Write-Host "[5/6] Skip legacy standalone webhook deploy (subscription-api handles Sakurupiah callback)."
 
 Write-Host "[6/6] Deploy function subscription-api..."
 Run-Checked "supabase functions deploy" { npx supabase functions deploy subscription-api --project-ref $projectRef }

@@ -8,17 +8,22 @@ type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
-type MidtransNotification = {
-  order_id?: string;
-  status_code?: string;
-  gross_amount?: string;
-  signature_key?: string;
-  transaction_status?: string;
-  transaction_id?: string;
-  fraud_status?: string;
-  payment_type?: string;
-  settlement_time?: string;
+type SakurupiahPayload = {
+  trx_id?: string;
+  merchant_ref?: string;
+  status?: string;
+  status_kode?: number | string;
+  payment_kode?: string;
+  method?: string;
+  via?: string;
+  amount?: number | string;
+  total?: number | string;
+  checkout_url?: string;
+  payment_no?: number | string;
+  qr?: string;
   transaction_time?: string;
+  settlement_time?: string;
+  event?: string;
   [key: string]: JsonValue | undefined;
 };
 
@@ -57,15 +62,28 @@ const SUPABASE_ANON_KEY =
   Deno.env.get("SUPABASE_ANON_KEY")?.trim()
   || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")?.trim()
   || SUPABASE_SERVICE_ROLE_KEY;
-const MIDTRANS_SERVER_KEY = Deno.env.get("MIDTRANS_SERVER_KEY")?.trim();
-const MIDTRANS_CLIENT_KEY = Deno.env.get("MIDTRANS_CLIENT_KEY")?.trim() || "";
-const MIDTRANS_IS_PRODUCTION = ["1", "true", "yes"].includes(
-  String(Deno.env.get("MIDTRANS_IS_PRODUCTION") || "").trim().toLowerCase(),
+const SAKURUPIAH_API_ID = Deno.env.get("SAKURUPIAH_API_ID")?.trim();
+const SAKURUPIAH_API_KEY = Deno.env.get("SAKURUPIAH_API_KEY")?.trim();
+const SAKURUPIAH_CALLBACK_URL = Deno.env.get("SAKURUPIAH_CALLBACK_URL")?.trim();
+const SAKURUPIAH_IS_PRODUCTION = ["1", "true", "yes"].includes(
+  String(Deno.env.get("SAKURUPIAH_IS_PRODUCTION") || "").trim().toLowerCase(),
+);
+const SAKURUPIAH_MERCHANT_FEE = String(Deno.env.get("SAKURUPIAH_MERCHANT_FEE") || "1").trim() || "1";
+const SAKURUPIAH_DEFAULT_EXPIRED_HOURS = Math.max(
+  1,
+  Math.min(168, Number.parseInt(String(Deno.env.get("SAKURUPIAH_DEFAULT_EXPIRED_HOURS") || "24"), 10) || 24),
 );
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !SUPABASE_ANON_KEY || !MIDTRANS_SERVER_KEY) {
+if (
+  !SUPABASE_URL
+  || !SUPABASE_SERVICE_ROLE_KEY
+  || !SUPABASE_ANON_KEY
+  || !SAKURUPIAH_API_ID
+  || !SAKURUPIAH_API_KEY
+  || !SAKURUPIAH_CALLBACK_URL
+) {
   throw new Error(
-    "Missing required env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY, MIDTRANS_SERVER_KEY",
+    "Missing required env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY, SAKURUPIAH_API_ID, SAKURUPIAH_API_KEY, SAKURUPIAH_CALLBACK_URL",
   );
 }
 
@@ -134,7 +152,7 @@ const json = (status: number, body: Record<string, JsonValue>) =>
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "authorization, content-type",
+      "Access-Control-Allow-Headers": "authorization, content-type, x-callback-signature, x-callback-event",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     },
   });
@@ -142,6 +160,20 @@ const json = (status: number, body: Record<string, JsonValue>) =>
 const digestHex = async (algorithm: "SHA-256" | "SHA-512", value: string): Promise<string> => {
   const digest = await crypto.subtle.digest(algorithm, encoder.encode(value));
   return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+};
+
+const hmacHex = async (algorithm: "SHA-256", secret: string, value: string): Promise<string> => {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: algorithm },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(value));
+  return Array.from(new Uint8Array(signature))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 };
@@ -657,49 +689,6 @@ const createCheckoutOrderId = () => {
   return `ORDER-SUB-${stamp}-${salt}`;
 };
 
-const createMidtransTransaction = async ({
-  payload,
-}: {
-  payload: Record<string, JsonValue>;
-}) => {
-  const baseUrl = MIDTRANS_IS_PRODUCTION
-    ? "https://app.midtrans.com/snap/v1/transactions"
-    : "https://app.sandbox.midtrans.com/snap/v1/transactions";
-
-  const basicAuth = btoa(`${MIDTRANS_SERVER_KEY}:`);
-  const response = await fetch(baseUrl, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      Authorization: `Basic ${basicAuth}`,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const raw = await response.text();
-  let data: Record<string, JsonValue> | null = null;
-  try {
-    data = raw ? (JSON.parse(raw) as Record<string, JsonValue>) : null;
-  } catch {
-    data = { raw };
-  }
-
-  if (!response.ok) {
-    throw new HttpError(502, `Midtrans checkout request failed (${response.status}): ${JSON.stringify(data)}`);
-  }
-
-  if (!data?.redirect_url || !data?.token) {
-    throw new HttpError(502, `Midtrans response is missing redirect_url/token: ${JSON.stringify(data)}`);
-  }
-
-  return data;
-};
-
-const buildMidtransSignatureBase = (payload: MidtransNotification): string => {
-  return `${payload.order_id ?? ""}${payload.status_code ?? ""}${payload.gross_amount ?? ""}${MIDTRANS_SERVER_KEY}`;
-};
-
 const timingSafeEqual = (left: string, right: string): boolean => {
   if (left.length !== right.length) return false;
 
@@ -711,23 +700,199 @@ const timingSafeEqual = (left: string, right: string): boolean => {
   return mismatch === 0;
 };
 
-const buildIdempotencyKey = async (payload: MidtransNotification): Promise<string> => {
+const normalizeSakurupiahBaseUrl = () => {
+  return SAKURUPIAH_IS_PRODUCTION
+    ? "https://sakurupiah.id/api"
+    : "https://sakurupiah.id/api-sanbox";
+};
+
+const normalizeSakurupiahPhone = (value: unknown) => {
+  const phone = String(value || "").replace(/[\s\-()+.]/g, "").trim();
+  if (!/^(?:0|62|60)\d{7,15}$/.test(phone)) {
+    throw new HttpError(400, "Nomor HP wajib diisi dengan format Indonesia/Malaysia, contoh 08xxx atau 62xxx.");
+  }
+  return phone;
+};
+
+const normalizeSakurupiahPaymentMethod = (value: unknown) => {
+  const method = String(value || "").trim();
+  if (!/^[A-Za-z0-9_-]{2,32}$/.test(method)) {
+    throw new HttpError(400, "paymentMethod Sakurupiah tidak valid.");
+  }
+  return method;
+};
+
+const parseSakurupiahJsonResponse = async (response: Response) => {
+  const raw = await response.text();
+  try {
+    return raw ? (JSON.parse(raw) as Record<string, JsonValue>) : {};
+  } catch {
+    return { raw };
+  }
+};
+
+const firstSakurupiahData = (data: Record<string, JsonValue>): Record<string, JsonValue> => {
+  const rows = data.data;
+  if (Array.isArray(rows) && rows.length > 0 && rows[0] && typeof rows[0] === "object") {
+    return rows[0] as Record<string, JsonValue>;
+  }
+  return {};
+};
+
+const createSakurupiahInvoice = async ({
+  orderId,
+  paymentMethod,
+  customerName,
+  customerEmail,
+  customerPhone,
+  amountIdr,
+  plan,
+  returnUrl,
+}: {
+  orderId: string;
+  paymentMethod: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  amountIdr: number;
+  plan: Record<string, JsonValue>;
+  returnUrl: string;
+}) => {
+  const amount = String(Math.round(amountIdr));
+  const signature = await hmacHex(
+    "SHA-256",
+    SAKURUPIAH_API_KEY || "",
+    `${SAKURUPIAH_API_ID}${paymentMethod}${orderId}${amount}`,
+  );
+
+  const params = new URLSearchParams();
+  params.set("api_id", SAKURUPIAH_API_ID || "");
+  params.set("method", paymentMethod);
+  params.set("name", customerName || "Customer");
+  params.set("email", customerEmail || "");
+  params.set("phone", customerPhone);
+  params.set("amount", amount);
+  params.set("merchant_fee", SAKURUPIAH_MERCHANT_FEE);
+  params.set("merchant_ref", orderId);
+  params.set("expired", String(SAKURUPIAH_DEFAULT_EXPIRED_HOURS));
+  params.append("produk[]", String(plan.name || plan.code || "Subscription"));
+  params.append("qty[]", "1");
+  params.append("harga[]", amount);
+  params.append("size[]", String(plan.tier || "subscription"));
+  params.append("note[]", `Plan ${String(plan.code || plan.id || "")}`);
+  params.set("callback_url", SAKURUPIAH_CALLBACK_URL || "");
+  params.set("return_url", returnUrl);
+  params.set("signature", signature);
+
+  const response = await fetch(`${normalizeSakurupiahBaseUrl()}/create.php`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Bearer ${SAKURUPIAH_API_KEY}`,
+    },
+    body: params.toString(),
+  });
+
+  const data = await parseSakurupiahJsonResponse(response);
+  if (!response.ok || String(data.status || "") !== "200") {
+    throw new HttpError(502, `Sakurupiah checkout request failed (${response.status}): ${JSON.stringify(data)}`);
+  }
+
+  const invoiceData = firstSakurupiahData(data);
+  if (!invoiceData.checkout_url || !invoiceData.trx_id) {
+    throw new HttpError(502, `Sakurupiah response is missing checkout_url/trx_id: ${JSON.stringify(data)}`);
+  }
+
+  return {
+    response: data,
+    invoice: invoiceData,
+  };
+};
+
+const checkSakurupiahStatus = async (trxId: string) => {
+  const params = new URLSearchParams();
+  params.set("api_id", SAKURUPIAH_API_ID || "");
+  params.set("method", "status");
+  params.set("trx_id", trxId);
+
+  const response = await fetch(`${normalizeSakurupiahBaseUrl()}/status-transaction.php`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Bearer ${SAKURUPIAH_API_KEY}`,
+    },
+    body: params.toString(),
+  });
+
+  const data = await parseSakurupiahJsonResponse(response);
+  if (!response.ok || String(data.status || "") !== "200") {
+    throw new HttpError(502, `Sakurupiah status request failed (${response.status}): ${JSON.stringify(data)}`);
+  }
+
+  return data;
+};
+
+const listSakurupiahPaymentChannels = async () => {
+  const params = new URLSearchParams();
+  params.set("api_id", SAKURUPIAH_API_ID || "");
+  params.set("method", "list");
+
+  const response = await fetch(`${normalizeSakurupiahBaseUrl()}/list-payment.php`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Bearer ${SAKURUPIAH_API_KEY}`,
+    },
+    body: params.toString(),
+  });
+
+  const data = await parseSakurupiahJsonResponse(response);
+  if (!response.ok || String(data.status || "") !== "200") {
+    throw new HttpError(502, `Sakurupiah channel request failed (${response.status}): ${JSON.stringify(data)}`);
+  }
+
+  const channels = Array.isArray(data.data)
+    ? data.data.map((channel) => {
+      const row = channel && typeof channel === "object" ? channel as Record<string, JsonValue> : {};
+      return {
+        code: String(row.kode || ""),
+        name: String(row.nama || row.kode || ""),
+        type: String(row.tipe || ""),
+        min: Number(row.minimal || 0),
+        max: Number(row.maksimal || 0),
+        fee: String(row.biaya || ""),
+        feeType: String(row.percent || ""),
+        status: String(row.status || ""),
+        logo: String(row.logo || ""),
+      };
+    }).filter((channel) => channel.code)
+    : [];
+
+  return json(200, {
+    channels,
+    source: "sakurupiah",
+  });
+};
+
+const buildSakurupiahIdempotencyKey = async (payload: SakurupiahPayload): Promise<string> => {
   const stable = [
-    payload.order_id ?? "",
-    payload.transaction_id ?? "",
-    payload.transaction_status ?? "",
-    payload.status_code ?? "",
-    payload.gross_amount ?? "",
-    payload.fraud_status ?? "",
+    payload.merchant_ref ?? "",
+    payload.trx_id ?? "",
+    payload.status ?? "",
+    payload.status_kode ?? "",
+    payload.event ?? "payment_status",
   ].join("|");
 
   return digestHex("SHA-256", stable);
 };
 
-const invokeProcessMidtransWebhook = async (payload: MidtransNotification) => {
-  const idempotencyKey = await buildIdempotencyKey(payload);
+const invokeProcessSakurupiahCallback = async (payload: SakurupiahPayload) => {
+  const idempotencyKey = await buildSakurupiahIdempotencyKey(payload);
 
-  const { data, error } = await serviceClient.rpc("process_midtrans_webhook", {
+  const { data, error } = await serviceClient.rpc("process_sakurupiah_callback", {
     p_payload: payload,
     p_idempotency_key: idempotencyKey,
   });
@@ -740,60 +905,6 @@ const invokeProcessMidtransWebhook = async (payload: MidtransNotification) => {
     idempotencyKey,
     result: data as JsonValue,
   };
-};
-
-const verifyMidtransPayment = async ({
-  orderId,
-}: {
-  orderId: string;
-}): Promise<{ data: MidtransNotification; source: string } | null> => {
-  const candidates = MIDTRANS_IS_PRODUCTION
-    ? [
-      { label: "production", baseUrl: "https://api.midtrans.com/v2" },
-      { label: "sandbox", baseUrl: "https://api.sandbox.midtrans.com/v2" },
-    ]
-    : [
-      { label: "sandbox", baseUrl: "https://api.sandbox.midtrans.com/v2" },
-      { label: "production", baseUrl: "https://api.midtrans.com/v2" },
-    ];
-
-  const basicAuth = btoa(`${MIDTRANS_SERVER_KEY}:`);
-
-  for (const candidate of candidates) {
-    const response = await fetch(`${candidate.baseUrl}/${orderId}/status`, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Basic ${basicAuth}`,
-      },
-    });
-
-    if (response.status === 404) {
-      continue;
-    }
-
-    const raw = await response.text();
-    let data: MidtransNotification | null = null;
-    try {
-      data = raw ? (JSON.parse(raw) as MidtransNotification) : null;
-    } catch {
-      data = { order_id: orderId };
-    }
-
-    if (!response.ok || !data) {
-      throw new HttpError(
-        502,
-        `Midtrans status request failed on ${candidate.label} (${response.status}): ${raw}`,
-      );
-    }
-
-    return {
-      data,
-      source: candidate.label,
-    };
-  }
-
-  return null;
 };
 
 const handleVoucherValidate = async (request: Request) => {
@@ -843,6 +954,15 @@ const handleCheckout = async (request: Request) => {
     throw new HttpError(400, "planId is required");
   }
 
+  const paymentMethod = normalizeSakurupiahPaymentMethod(body.paymentMethod);
+  const customerPhone = normalizeSakurupiahPhone(body.customerPhone);
+  const requestUrl = new URL(request.url);
+  const fallbackReturnUrl = `${requestUrl.origin}/subscription`;
+  const returnUrl = String(body.returnUrl || fallbackReturnUrl).trim();
+  if (!/^https?:\/\//i.test(returnUrl)) {
+    throw new HttpError(400, "returnUrl must be an absolute http(s) URL.");
+  }
+
   const voucherCode = body.voucherCode;
   const plan = await fetchActivePlanById(planId);
   const planAmount = resolvePlanAmountIdr(plan);
@@ -863,7 +983,7 @@ const handleCheckout = async (request: Request) => {
           user_id: user.id,
           plan_id: String(plan.id),
           status: "pending_payment",
-          source: "midtrans",
+          source: "sakurupiah",
         },
       ],
       { onConflict: "user_id" },
@@ -887,7 +1007,7 @@ const handleCheckout = async (request: Request) => {
       {
         user_id: user.id,
         membership_id: String(membership.id),
-        provider: "midtrans",
+        provider: "sakurupiah",
         external_order_id: orderId,
         currency: "IDR",
         amount_idr: payableAmount,
@@ -896,6 +1016,11 @@ const handleCheckout = async (request: Request) => {
           source: "subscription-api",
           plan_id: String(plan.id),
           plan_code: String(plan.code),
+          sakurupiah: {
+            payment_method: paymentMethod,
+            callback_url: SAKURUPIAH_CALLBACK_URL,
+            return_url: returnUrl,
+          },
           voucher: checkoutVoucher
             ? {
               id: String(checkoutVoucher.voucher.id),
@@ -936,31 +1061,15 @@ const handleCheckout = async (request: Request) => {
     || user.email?.split("@")[0]
     || "Customer";
 
-  const midtransPayload: Record<string, JsonValue> = {
-    transaction_details: {
-      order_id: orderId,
-      gross_amount: payableAmount,
-    },
-    customer_details: {
-      first_name: displayName,
-      email: user.email || "",
-    },
-    item_details: [
-      {
-        id: checkoutVoucher ? `${String(plan.code)}-discounted` : String(plan.code),
-        name: checkoutVoucher ? `${String(plan.name)} + Voucher` : String(plan.name),
-        price: payableAmount,
-        quantity: 1,
-      },
-    ],
-    custom_expiry: {
-      expiry_duration: 60,
-      unit: "minute",
-    },
-  };
-
-  const midtransResponse = await createMidtransTransaction({
-    payload: midtransPayload,
+  const sakurupiahResponse = await createSakurupiahInvoice({
+    orderId,
+    paymentMethod,
+    customerName: String(displayName),
+    customerEmail: user.email || "",
+    customerPhone,
+    amountIdr: payableAmount,
+    plan,
+    returnUrl,
   });
 
   const { error: patchInvoiceError } = await serviceClient
@@ -970,6 +1079,18 @@ const handleCheckout = async (request: Request) => {
         source: "subscription-api",
         plan_id: String(plan.id),
         plan_code: String(plan.code),
+        sakurupiah: {
+          payment_method: paymentMethod,
+          trx_id: String(sakurupiahResponse.invoice.trx_id || ""),
+          checkout_url: String(sakurupiahResponse.invoice.checkout_url || ""),
+          payment_no: sakurupiahResponse.invoice.payment_no ?? null,
+          qr: sakurupiahResponse.invoice.qr ?? null,
+          via: sakurupiahResponse.invoice.via ?? null,
+          payment_kode: sakurupiahResponse.invoice.payment_kode ?? paymentMethod,
+          callback_url: SAKURUPIAH_CALLBACK_URL,
+          return_url: returnUrl,
+          response: sakurupiahResponse.response,
+        },
         voucher: checkoutVoucher
           ? {
             id: String(checkoutVoucher.voucher.id),
@@ -981,7 +1102,6 @@ const handleCheckout = async (request: Request) => {
             final_amount_idr: checkoutVoucher.finalAmountIdr,
           }
           : null,
-        midtrans: midtransResponse,
       },
     })
     .eq("id", String(invoice.id));
@@ -994,10 +1114,13 @@ const handleCheckout = async (request: Request) => {
     orderId,
     invoiceId: String(invoice.id),
     membershipId: String(membership.id),
-    token: String(midtransResponse.token || ""),
-    redirectUrl: String(midtransResponse.redirect_url || ""),
-    midtransMode: MIDTRANS_IS_PRODUCTION ? "production" : "sandbox",
-    midtransClientKey: MIDTRANS_CLIENT_KEY,
+    trxId: String(sakurupiahResponse.invoice.trx_id || ""),
+    checkoutUrl: String(sakurupiahResponse.invoice.checkout_url || ""),
+    redirectUrl: String(sakurupiahResponse.invoice.checkout_url || ""),
+    paymentNo: sakurupiahResponse.invoice.payment_no ?? null,
+    qr: sakurupiahResponse.invoice.qr ?? null,
+    paymentMethod,
+    sakurupiahMode: SAKURUPIAH_IS_PRODUCTION ? "production" : "sandbox",
     voucher: checkoutVoucher
       ? {
         code: checkoutVoucher.voucherCode,
@@ -1013,29 +1136,73 @@ const handleVerifyPayment = async (request: Request) => {
   await authenticateUser(request);
   const body = await parseJsonBody(request);
 
-  const directNotification = body.notification as MidtransNotification | undefined;
-  const orderIdFromNotification = directNotification?.order_id
-    ? String(directNotification.order_id).trim()
+  const directNotification = body.notification as SakurupiahPayload | undefined;
+  const orderIdFromNotification = directNotification?.merchant_ref
+    ? String(directNotification.merchant_ref).trim()
     : "";
-  const orderId = String(body.order_id || orderIdFromNotification || "").trim();
+  const orderId = String(body.order_id || body.merchant_ref || orderIdFromNotification || "").trim();
 
   if (!orderId) {
     throw new HttpError(400, "order_id is required");
   }
 
-  const verification = await verifyMidtransPayment({ orderId });
-  if (!verification?.data) {
-    throw new HttpError(
-      404,
-      "Transaction not found in Midtrans status API (cek MIDTRANS_IS_PRODUCTION dan server key).",
-    );
+  if (directNotification && typeof directNotification === "object" && directNotification.merchant_ref) {
+    const processResult = await invokeProcessSakurupiahCallback({
+      ...directNotification,
+      event: String(directNotification.event || "payment_status"),
+    });
+
+    return json(200, {
+      ok: true,
+      source: "direct-notification",
+      orderId,
+      idempotency_key: processResult.idempotencyKey,
+      result: processResult.result,
+    });
   }
 
-  const processResult = await invokeProcessMidtransWebhook(verification.data);
+  const { data: invoice, error } = await serviceClient
+    .from("invoices")
+    .select("id,external_order_id,amount_idr,raw_payload")
+    .eq("external_order_id", orderId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new HttpError(502, `Failed to read invoice: ${error.message}`);
+  }
+
+  const rawPayload = (invoice?.raw_payload || {}) as Record<string, JsonValue>;
+  const sakurupiahPayload = (rawPayload.sakurupiah || {}) as Record<string, JsonValue>;
+  const trxId = String(body.trx_id || sakurupiahPayload.trx_id || "").trim();
+  if (!invoice || !trxId) {
+    throw new HttpError(404, "Invoice Sakurupiah/trx_id tidak ditemukan untuk order ini.");
+  }
+
+  const verification = await checkSakurupiahStatus(trxId);
+  const statusData = firstSakurupiahData(verification);
+  const status = String(statusData.status || "").trim().toLowerCase();
+  if (!status) {
+    throw new HttpError(502, `Sakurupiah status response is missing status: ${JSON.stringify(verification)}`);
+  }
+
+  const statusCode = status === "berhasil" ? 1 : status === "expired" ? 2 : 0;
+  const processPayload: SakurupiahPayload = {
+    ...sakurupiahPayload,
+    ...statusData,
+    trx_id: trxId,
+    merchant_ref: orderId,
+    status,
+    status_kode: statusData.status_kode ?? statusCode,
+    amount: invoice.amount_idr as JsonValue,
+    event: "payment_status",
+  };
+
+  const processResult = await invokeProcessSakurupiahCallback(processPayload);
 
   return json(200, {
     ok: true,
-    source: verification.source,
+    source: "sakurupiah-status",
     orderId,
     idempotency_key: processResult.idempotencyKey,
     result: processResult.result,
@@ -1302,21 +1469,38 @@ const handleRenderSummary = async (request: Request) => {
 };
 
 const handleWebhook = async (request: Request) => {
-  const body = await parseJsonBody(request);
-  const payload = body as MidtransNotification;
+  const rawBody = await request.text();
+  const incomingSignature = String(request.headers.get("x-callback-signature") || "").trim().toLowerCase();
+  const callbackEvent = String(request.headers.get("x-callback-event") || "").trim();
 
-  if (!payload.order_id || !payload.status_code || !payload.gross_amount || !payload.signature_key) {
-    throw new HttpError(400, "Missing required Midtrans fields");
+  if (callbackEvent !== "payment_status") {
+    throw new HttpError(400, `Unrecognized callback event: ${callbackEvent || "(empty)"}`);
   }
 
-  const expectedSignature = await digestHex("SHA-512", buildMidtransSignatureBase(payload));
-  const incomingSignature = String(payload.signature_key).toLowerCase();
+  if (!incomingSignature) {
+    throw new HttpError(401, "Missing X-Callback-Signature");
+  }
 
+  const expectedSignature = await hmacHex("SHA-256", SAKURUPIAH_API_KEY || "", rawBody);
   if (!timingSafeEqual(expectedSignature, incomingSignature)) {
     throw new HttpError(401, "Invalid signature");
   }
 
-  const processResult = await invokeProcessMidtransWebhook(payload);
+  let payload: SakurupiahPayload;
+  try {
+    payload = JSON.parse(rawBody) as SakurupiahPayload;
+  } catch {
+    throw new HttpError(400, "Invalid JSON payload");
+  }
+
+  if (!payload.trx_id || !payload.merchant_ref || !payload.status) {
+    throw new HttpError(400, "Missing required Sakurupiah callback fields");
+  }
+
+  const processResult = await invokeProcessSakurupiahCallback({
+    ...payload,
+    event: callbackEvent,
+  });
 
   return json(200, {
     ok: true,
@@ -1338,11 +1522,16 @@ Deno.serve(async (request) => {
       return json(200, {
         ok: true,
         service: "subscription-api",
-        mode: MIDTRANS_IS_PRODUCTION ? "production" : "sandbox",
+        paymentProvider: "sakurupiah",
+        mode: SAKURUPIAH_IS_PRODUCTION ? "production" : "sandbox",
       });
     }
 
     // All other endpoints require authentication
+    if (request.method === "GET" && routePath === "/payment-channels") {
+      return await listSakurupiahPaymentChannels();
+    }
+
     if (
       request.method === "POST"
       && ["/voucher/validate", "/voucher/check", "/voucher/claim"].includes(routePath)
@@ -1377,8 +1566,8 @@ Deno.serve(async (request) => {
     }
 
     if (request.method === "POST" && routePath === "/webhook") {
-      // Midtrans webhook does not send Supabase bearer token.
-      // Security is enforced by Midtrans signature verification in handleWebhook().
+      // Sakurupiah callback does not send Supabase bearer token.
+      // Security is enforced by X-Callback-Signature verification in handleWebhook().
       return await handleWebhook(request);
     }
 

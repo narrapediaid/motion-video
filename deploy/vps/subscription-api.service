@@ -7,6 +7,7 @@ Type=simple
 User=motionapi
 WorkingDirectory=/opt/motion-video
 EnvironmentFile=/opt/motion-video/deploy/vps/subscription-api.env
+Environment=DENO_DIR=/opt/motion-video/.deno_cache
 ExecStart=/usr/local/bin/deno run --allow-net --allow-env --env-file=/opt/motion-video/deploy/vps/subscription-api.env /opt/motion-video/supabase/functions/subscription-api/index.ts
 Restart=always
 RestartSec=3

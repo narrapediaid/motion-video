@@ -13,7 +13,10 @@ Dokumen ini menjadi checklist operasional sebelum dan saat deploy migration + fu
 ### Function-level (Secrets)
 - SUPABASE_URL
 - SUPABASE_SERVICE_ROLE_KEY
-- MIDTRANS_SERVER_KEY
+- SAKURUPIAH_API_ID
+- SAKURUPIAH_API_KEY
+- SAKURUPIAH_CALLBACK_URL
+- SAKURUPIAH_IS_PRODUCTION
 
 ### Client-level (Public)
 - VITE_SUPABASE_URL
@@ -30,7 +33,7 @@ Dokumen ini menjadi checklist operasional sebelum dan saat deploy migration + fu
 ## 4) Pre-Deploy Checklist
 1. PAT aktif dan memiliki akses ke project target.
 2. DB password project valid.
-3. MIDTRANS_SERVER_KEY production sudah tersedia.
+3. Credential Sakurupiah production sudah tersedia.
 4. Semua migration SQL sudah final dan direview.
 5. Edge function lint/type-check lulus.
 6. Tidak ada secret di file yang di-track git.
@@ -40,14 +43,14 @@ Dokumen ini menjadi checklist operasional sebelum dan saat deploy migration + fu
 1. Link project remote.
 2. Push migration DB.
 3. Set function secrets.
-4. Deploy function midtrans-webhook.
+4. Deploy function subscription-api.
 5. Smoke test webhook endpoint.
 6. Verifikasi tabel event/audit.
 
 ## 6) Smoke Test Minimal Setelah Deploy
 1. Kirim payload signature invalid -> harus 401.
 2. Kirim payload valid pending -> event tercatat.
-3. Kirim payload settlement -> invoice paid + membership active.
+3. Kirim payload berhasil -> invoice paid + membership active.
 4. Kirim payload duplikat -> no-op.
 5. Cek audit_logs dan payment_events.
 
