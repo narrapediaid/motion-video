@@ -19,7 +19,7 @@ curl -s https://apimotion.narrapedia.top/subscription/health
 ```
 
 2. Variabel env backend sudah benar di VPS:
-`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `SAKURUPIAH_API_ID`, `SAKURUPIAH_API_KEY`, `SAKURUPIAH_CALLBACK_URL`, `SAKURUPIAH_IS_PRODUCTION`.
+`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `SAKURUPIAH_API_ID`, `SAKURUPIAH_API_KEY`, `SAKURUPIAH_CALLBACK_URL`, `SAKURUPIAH_RETURN_URL`, `SAKURUPIAH_IS_PRODUCTION`.
 
 3. Untuk test end-to-end awal, sangat disarankan pakai mode sandbox Sakurupiah.
 

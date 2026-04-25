@@ -65,6 +65,7 @@ const SUPABASE_ANON_KEY =
 const SAKURUPIAH_API_ID = Deno.env.get("SAKURUPIAH_API_ID")?.trim();
 const SAKURUPIAH_API_KEY = Deno.env.get("SAKURUPIAH_API_KEY")?.trim();
 const SAKURUPIAH_CALLBACK_URL = Deno.env.get("SAKURUPIAH_CALLBACK_URL")?.trim();
+const SAKURUPIAH_RETURN_URL = Deno.env.get("SAKURUPIAH_RETURN_URL")?.trim();
 const SAKURUPIAH_IS_PRODUCTION = ["1", "true", "yes"].includes(
   String(Deno.env.get("SAKURUPIAH_IS_PRODUCTION") || "").trim().toLowerCase(),
 );
@@ -210,6 +211,69 @@ const getRoutePath = (request: Request): string => {
   }
 
   return normalizeRoutePath(pathname);
+};
+
+const parseHttpUrl = (value: string): URL | null => {
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) ? url : null;
+  } catch {
+    return null;
+  }
+};
+
+const isLocalOrPrivateHost = (hostname: string): boolean => {
+  const host = hostname.trim().toLowerCase().replace(/^\[(.*)\]$/, "$1");
+  if (!host || host === "localhost" || host === "::1" || host.endsWith(".local")) {
+    return true;
+  }
+  if (/^(127|10|0)\./.test(host) || /^192\.168\./.test(host)) {
+    return true;
+  }
+  const private172 = /^172\.(\d{1,2})\./.exec(host);
+  return Boolean(private172 && Number(private172[1]) >= 16 && Number(private172[1]) <= 31);
+};
+
+const isValidProductionReturnUrl = (value: string): boolean => {
+  const url = parseHttpUrl(value);
+  return Boolean(url && url.protocol === "https:" && !isLocalOrPrivateHost(url.hostname));
+};
+
+const defaultSakurupiahReturnUrl = (requestUrl: URL): string => {
+  if (SAKURUPIAH_RETURN_URL) {
+    return SAKURUPIAH_RETURN_URL;
+  }
+
+  const callbackUrl = parseHttpUrl(SAKURUPIAH_CALLBACK_URL || "");
+  if (callbackUrl) {
+    callbackUrl.search = "";
+    callbackUrl.hash = "";
+    callbackUrl.pathname = callbackUrl.pathname.replace(/\/(?:webhook|callback)\/?$/i, "") || "/subscription";
+    return callbackUrl.toString();
+  }
+
+  return `${requestUrl.origin}/subscription`;
+};
+
+const resolveSakurupiahReturnUrl = (value: unknown, requestUrl: URL): string => {
+  const fallback = defaultSakurupiahReturnUrl(requestUrl);
+  const requested = String(value || "").trim();
+  const candidate = requested || fallback;
+
+  if (SAKURUPIAH_IS_PRODUCTION) {
+    if (isValidProductionReturnUrl(candidate)) {
+      return parseHttpUrl(candidate)?.toString() || candidate;
+    }
+    if (isValidProductionReturnUrl(fallback)) {
+      return parseHttpUrl(fallback)?.toString() || fallback;
+    }
+    throw new HttpError(500, "SAKURUPIAH_RETURN_URL must be a public https URL in production.");
+  }
+
+  if (!parseHttpUrl(candidate)) {
+    throw new HttpError(400, "returnUrl must be an absolute http(s) URL.");
+  }
+  return parseHttpUrl(candidate)?.toString() || candidate;
 };
 
 const getBearerToken = (request: Request): string => {
@@ -957,11 +1021,7 @@ const handleCheckout = async (request: Request) => {
   const paymentMethod = normalizeSakurupiahPaymentMethod(body.paymentMethod);
   const customerPhone = normalizeSakurupiahPhone(body.customerPhone);
   const requestUrl = new URL(request.url);
-  const fallbackReturnUrl = `${requestUrl.origin}/subscription`;
-  const returnUrl = String(body.returnUrl || fallbackReturnUrl).trim();
-  if (!/^https?:\/\//i.test(returnUrl)) {
-    throw new HttpError(400, "returnUrl must be an absolute http(s) URL.");
-  }
+  const returnUrl = resolveSakurupiahReturnUrl(body.returnUrl, requestUrl);
 
   const voucherCode = body.voucherCode;
   const plan = await fetchActivePlanById(planId);

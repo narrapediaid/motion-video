@@ -49,6 +49,7 @@ $env:SUPABASE_DB_PASSWORD="your_db_password"
 $env:SAKURUPIAH_API_ID="your_sakurupiah_api_id"
 $env:SAKURUPIAH_API_KEY="your_sakurupiah_api_key"
 $env:SAKURUPIAH_CALLBACK_URL="https://YOUR_PROJECT.functions.supabase.co/functions/v1/subscription-api/webhook"
+$env:SAKURUPIAH_RETURN_URL="https://YOUR_PROJECT.functions.supabase.co/functions/v1/subscription-api"
 $env:SAKURUPIAH_IS_PRODUCTION="true"
 ```
 
