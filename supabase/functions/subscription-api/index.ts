@@ -158,6 +158,16 @@ const json = (status: number, body: Record<string, JsonValue>) =>
     },
   });
 
+const html = (status: number, body: string) =>
+  new Response(body, {
+    status,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+      "Access-Control-Allow-Origin": "*",
+    },
+  });
+
 const digestHex = async (algorithm: "SHA-256" | "SHA-512", value: string): Promise<string> => {
   const digest = await crypto.subtle.digest(algorithm, encoder.encode(value));
   return Array.from(new Uint8Array(digest))
@@ -248,11 +258,13 @@ const defaultSakurupiahReturnUrl = (requestUrl: URL): string => {
   if (callbackUrl) {
     callbackUrl.search = "";
     callbackUrl.hash = "";
-    callbackUrl.pathname = callbackUrl.pathname.replace(/\/(?:webhook|callback)\/?$/i, "") || "/subscription";
+    const basePath = (callbackUrl.pathname.replace(/\/(?:webhook|callback)\/?$/i, "") || "/subscription")
+      .replace(/\/+$/, "");
+    callbackUrl.pathname = `${basePath}/return`;
     return callbackUrl.toString();
   }
 
-  return `${requestUrl.origin}/subscription`;
+  return `${requestUrl.origin}/subscription/return`;
 };
 
 const resolveSakurupiahReturnUrl = (value: unknown, requestUrl: URL): string => {
@@ -274,6 +286,108 @@ const resolveSakurupiahReturnUrl = (value: unknown, requestUrl: URL): string => 
     throw new HttpError(400, "returnUrl must be an absolute http(s) URL.");
   }
   return parseHttpUrl(candidate)?.toString() || candidate;
+};
+
+const renderPaymentReturnPage = (request: Request) => {
+  const url = new URL(request.url);
+  const orderId =
+    url.searchParams.get("merchant_ref")
+    || url.searchParams.get("order_id")
+    || url.searchParams.get("orderId")
+    || "";
+
+  return html(200, `<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Status Pembayaran</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        font-family: "Segoe UI", Arial, sans-serif;
+        color: #e9f1ff;
+        background:
+          radial-gradient(70% 55% at 80% 0%, rgba(45, 212, 191, 0.16), transparent 70%),
+          linear-gradient(145deg, #0c1a2d, #07101b 64%);
+      }
+      main {
+        width: min(560px, 100%);
+        border: 1px solid rgba(125, 189, 248, 0.28);
+        border-radius: 18px;
+        background: rgba(10, 22, 38, 0.92);
+        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+        padding: 24px;
+      }
+      .eyebrow {
+        margin: 0 0 8px;
+        color: #7dd3fc;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.55rem;
+        line-height: 1.25;
+      }
+      p {
+        color: #a9bad3;
+        line-height: 1.6;
+      }
+      .order {
+        margin: 16px 0;
+        border: 1px dashed rgba(125, 189, 248, 0.38);
+        border-radius: 12px;
+        padding: 12px;
+        color: #dff2ff;
+        overflow-wrap: anywhere;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 18px;
+      }
+      button,
+      a {
+        border: 1px solid rgba(121, 189, 246, 0.55);
+        border-radius: 12px;
+        min-height: 42px;
+        padding: 10px 14px;
+        color: #dff2ff;
+        background: rgba(45, 212, 191, 0.18);
+        font: inherit;
+        font-weight: 700;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .muted {
+        background: rgba(7, 18, 31, 0.5);
+        color: #a9bad3;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Sakurupiah</p>
+      <h1>Pembayaran sedang diproses</h1>
+      <p>Silakan kembali ke aplikasi Narrapedia reMotion Batch, lalu tekan tombol <strong>Cek Status</strong> pada invoice untuk memperbarui keanggotaan.</p>
+      ${orderId ? `<div class="order">Order ID: ${orderId.replace(/[<>&"]/g, "")}</div>` : ""}
+      <div class="actions">
+        <button type="button" onclick="window.close()">Tutup Halaman</button>
+        <a class="muted" href="https://narrapedia.top/tools/narrapedia-motion-batch">Buka Halaman Aplikasi</a>
+      </div>
+    </main>
+  </body>
+</html>`);
 };
 
 const getBearerToken = (request: Request): string => {
@@ -1585,6 +1699,13 @@ Deno.serve(async (request) => {
         paymentProvider: "sakurupiah",
         mode: SAKURUPIAH_IS_PRODUCTION ? "production" : "sandbox",
       });
+    }
+
+    if (
+      request.method === "GET"
+      && ["/", "/return", "/payment-return", "/checkout-return"].includes(routePath)
+    ) {
+      return renderPaymentReturnPage(request);
     }
 
     // All other endpoints require authentication

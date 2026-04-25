@@ -627,6 +627,78 @@
         min-width: 140px;
       }
 
+      .payment-dialog {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+        background: rgba(2, 8, 16, 0.72);
+      }
+
+      .payment-dialog.open {
+        display: flex;
+      }
+
+      .payment-dialog-panel {
+        width: min(520px, 100%);
+        border: 1px solid rgba(125, 189, 248, 0.35);
+        border-radius: var(--radius-lg);
+        background: linear-gradient(165deg, rgba(13, 28, 48, 0.98), rgba(8, 18, 32, 0.98));
+        box-shadow: 0 20px 46px rgba(0, 0, 0, 0.44);
+        padding: 18px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .payment-dialog-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .payment-dialog-header h3 {
+        margin: 0;
+        font-size: 1.18rem;
+      }
+
+      .payment-dialog-header p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        line-height: 1.5;
+        font-size: 0.9rem;
+      }
+
+      .payment-dialog-close {
+        width: 36px;
+        min-width: 36px;
+        min-height: 36px;
+        padding: 0;
+        border-radius: 999px;
+      }
+
+      .payment-dialog-order {
+        border: 1px dashed rgba(121, 189, 246, 0.42);
+        border-radius: 12px;
+        padding: 10px;
+        color: #dff2ff;
+        font-size: 0.86rem;
+        overflow-wrap: anywhere;
+      }
+
+      .payment-dialog-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .payment-dialog-actions .btn {
+        flex: 1 1 150px;
+      }
+
       @media (max-width: 1080px) {
         .workspace {
           flex-direction: column;
@@ -793,6 +865,24 @@
       </section>
     </div>
 
+    <div class="payment-dialog" id="paymentDialog" role="dialog" aria-modal="true" aria-labelledby="paymentDialogTitle">
+      <div class="payment-dialog-panel">
+        <div class="payment-dialog-header">
+          <div>
+            <h3 id="paymentDialogTitle">Pembayaran Sakurupiah</h3>
+            <p id="paymentDialogMessage">Halaman pembayaran sudah dibuka di browser.</p>
+          </div>
+          <button class="btn btn-ghost payment-dialog-close" id="paymentDialogCloseBtn" type="button" aria-label="Tutup">X</button>
+        </div>
+        <div class="payment-dialog-order" id="paymentDialogOrder">Order ID: -</div>
+        <div class="payment-dialog-actions">
+          <button class="btn btn-primary" id="paymentDialogOpenBtn" type="button">Buka Pembayaran</button>
+          <button class="btn btn-soft" id="paymentDialogVerifyBtn" type="button">Cek Status</button>
+          <button class="btn btn-ghost" id="paymentDialogDoneBtn" type="button">Kembali</button>
+        </div>
+      </div>
+    </div>
+
     <script type="module">
       import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -824,6 +914,13 @@
       const latestPaymentStatus = document.getElementById("latestPaymentStatus");
       const invoiceRows = document.getElementById("invoiceRows");
       const logs = document.getElementById("logs");
+      const paymentDialog = document.getElementById("paymentDialog");
+      const paymentDialogMessage = document.getElementById("paymentDialogMessage");
+      const paymentDialogOrder = document.getElementById("paymentDialogOrder");
+      const paymentDialogCloseBtn = document.getElementById("paymentDialogCloseBtn");
+      const paymentDialogOpenBtn = document.getElementById("paymentDialogOpenBtn");
+      const paymentDialogVerifyBtn = document.getElementById("paymentDialogVerifyBtn");
+      const paymentDialogDoneBtn = document.getElementById("paymentDialogDoneBtn");
 
       const state = {
         mode: "login",
@@ -842,6 +939,7 @@
         },
         pendingPayments: {},
         invoicePaymentMap: {},
+        activePaymentDialog: null,
       };
 
       const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
@@ -1121,6 +1219,42 @@
           return null;
         }
         return state.pendingPayments[normalizedOrderId] || null;
+      };
+
+      const openPaymentUrl = (url) => {
+        const checkoutUrl = String(url || "").trim();
+        if (!checkoutUrl) {
+          return false;
+        }
+
+        const opened = window.open(checkoutUrl, "_blank", "noopener,noreferrer");
+        if (!opened) {
+          log("Jika halaman pembayaran tidak terbuka otomatis, gunakan tombol Buka Pembayaran.", "info");
+        }
+        return Boolean(opened);
+      };
+
+      const hidePaymentDialog = () => {
+        state.activePaymentDialog = null;
+        paymentDialog?.classList.remove("open");
+      };
+
+      const showPaymentDialog = ({ orderId, checkoutUrl, opened = false }) => {
+        const normalizedOrderId = String(orderId || "").trim();
+        const normalizedCheckoutUrl = String(checkoutUrl || "").trim();
+
+        state.activePaymentDialog = {
+          orderId: normalizedOrderId,
+          checkoutUrl: normalizedCheckoutUrl,
+        };
+
+        paymentDialogOrder.textContent = `Order ID: ${normalizedOrderId || "-"}`;
+        paymentDialogMessage.textContent = opened
+          ? "Halaman pembayaran sudah dibuka di browser. Setelah pembayaran selesai, kembali ke aplikasi ini dan cek status invoice."
+          : "Gunakan tombol Buka Pembayaran untuk melanjutkan pembayaran. Setelah selesai, kembali ke aplikasi ini dan cek status invoice.";
+        paymentDialogOpenBtn.disabled = !normalizedCheckoutUrl;
+        paymentDialogVerifyBtn.disabled = !normalizedOrderId;
+        paymentDialog?.classList.add("open");
       };
 
       const signInWithRetry = async ({ email, password, maxAttempts = 3 }) => {
@@ -1688,7 +1822,12 @@
 
         if (redirectUrl) {
           log(`Membuka halaman pembayaran untuk ${normalizedOrderId}.`, "ok");
-          window.open(redirectUrl, "_blank", "noopener,noreferrer");
+          const opened = openPaymentUrl(redirectUrl);
+          showPaymentDialog({
+            orderId: normalizedOrderId,
+            checkoutUrl: redirectUrl,
+            opened,
+          });
           return;
         }
 
@@ -1998,6 +2137,30 @@
         }
       });
 
+      paymentDialogCloseBtn.addEventListener("click", hidePaymentDialog);
+      paymentDialogDoneBtn.addEventListener("click", hidePaymentDialog);
+      paymentDialog.addEventListener("click", (event) => {
+        if (event.target === paymentDialog) {
+          hidePaymentDialog();
+        }
+      });
+      paymentDialogOpenBtn.addEventListener("click", () => {
+        const checkoutUrl = String(state.activePaymentDialog?.checkoutUrl || "").trim();
+        if (!checkoutUrl) {
+          log("URL pembayaran belum tersedia.", "error");
+          return;
+        }
+        openPaymentUrl(checkoutUrl);
+      });
+      paymentDialogVerifyBtn.addEventListener("click", async () => {
+        const orderId = String(state.activePaymentDialog?.orderId || "").trim();
+        if (!orderId) {
+          log("Order ID pembayaran belum tersedia.", "error");
+          return;
+        }
+        await window.verifyPayment(orderId);
+      });
+
       checkoutBtn.addEventListener("click", async () => {
         if (!state.session) {
           log("Silakan masuk terlebih dahulu sebelum melakukan checkout.", "error");
@@ -2053,8 +2216,13 @@
 
           const checkoutUrl = String(result.checkoutUrl || result.redirectUrl || "").trim();
           if (checkoutUrl) {
-            log("Mengarahkan ke halaman pembayaran Sakurupiah.", "ok");
-            window.location.assign(checkoutUrl);
+            log("Membuka halaman pembayaran Sakurupiah.", "ok");
+            const opened = openPaymentUrl(checkoutUrl);
+            showPaymentDialog({
+              orderId: result.orderId,
+              checkoutUrl,
+              opened,
+            });
           } else {
             throw new Error("Checkout tidak mengembalikan URL pembayaran Sakurupiah.");
           }
